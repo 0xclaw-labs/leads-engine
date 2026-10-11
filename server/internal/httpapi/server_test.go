@@ -156,6 +156,7 @@ type harnessOpts struct {
 	featureMatrixHandoff    bool   // FEATURE_MATRIX_HANDOFF=on (HUI-2391)
 	matrixDraftURL          string // MATRIX_DRAFT_BASE_URL (AG10 draft API base, loopback in tests)
 	omitVisitorPepper       bool   // reception routes fail closed without RECEPTION_VISITOR_PEPPER
+	dbPath                  string // override the default temp leads.db (live matrix test shares one file)
 	ingestFetchBase         string
 	ingestSecret            string
 	ingestFetchToken        string
@@ -164,7 +165,10 @@ type harnessOpts struct {
 func newHarnessOpts(t *testing.T, opts harnessOpts) *harness {
 	t.Helper()
 	fake := fakeIdentity(t)
-	dbPath := filepath.Join(t.TempDir(), "leads.db")
+	dbPath := opts.dbPath
+	if dbPath == "" {
+		dbPath = filepath.Join(t.TempDir(), "leads.db")
+	}
 	internalToken := "test-internal-token"
 	ecoURL := ""
 	var eco *ecoStub

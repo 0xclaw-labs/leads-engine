@@ -58,10 +58,10 @@ func (s *Server) handleCampaignMotionPost(w http.ResponseWriter, r *http.Request
 	}
 	// The creative-project port is observed, not nil: zero writes is a count.
 	port := &campaignmotion.CountingWriter{}
-	prepared, err := campaignmotion.Prepare(id, body, port)
+	prepared, err := campaignmotion.Prepare(c.Member.TenantID, id, body, port)
 	if err != nil {
-		code, message := motionError(err)
-		fail(w, http.StatusBadRequest, code, message)
+		status, code, message := motionError(err)
+		fail(w, status, code, message)
 		return
 	}
 	if err := port.AssertZero(); err != nil {
@@ -125,15 +125,21 @@ func motionView(export json.RawMessage, local campaignmotion.Conversion, notice 
 	}
 }
 
-func motionError(err error) (string, string) {
+func motionError(err error) (int, string, string) {
 	switch {
 	case errors.Is(err, campaignmotion.ErrDigest):
-		return "digest", "动效引用的 digest 必须是 sha256: 加 64 位小写十六进制，否则不能交出。"
+		return http.StatusBadRequest, "digest", "动效引用的 digest 必须是 sha256: 加 64 位小写十六进制，否则不能交出。"
 	case errors.Is(err, campaignmotion.ErrMotion):
-		return "motion", "动效引用只能有 project_id、revision_id、campaign_id 和 digest。"
+		return http.StatusBadRequest, "motion", "动效引用只能有 project_id、revision_id、campaign_id 和 digest。"
 	case errors.Is(err, campaignmotion.ErrChannel):
-		return "channel", "至少要有一个渠道名。多个渠道只记下名字，不会按渠道次数生成。"
+		return http.StatusBadRequest, "channel", "至少要有一个渠道名。多个渠道只记下名字，不会按渠道次数生成。"
+	case errors.Is(err, campaignmotion.ErrNoMotionReceiver):
+		return http.StatusUnprocessableEntity, "motion_receiver", "变体绑定缺少动效接收方账号；没有收件方就不会伪造形状。"
+	case errors.Is(err, campaignmotion.ErrForeignTenant):
+		return http.StatusForbidden, "foreign_tenant", "变体绑定指向其他租户的动效工程，已拒绝。"
+	case errors.Is(err, campaignmotion.ErrVariantExpired):
+		return http.StatusUnprocessableEntity, "variant_expired", "变体绑定的到期时间已过；请换新的到期时间再交出。"
 	default:
-		return "invalid", "活动交出不完整，或带有不能出域的内容。"
+		return http.StatusBadRequest, "invalid", "活动交出不完整，或带有不能出域的内容。"
 	}
 }

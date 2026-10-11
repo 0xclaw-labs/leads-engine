@@ -31,7 +31,7 @@ func TestCountingWriterRefusesAndCounts(t *testing.T) {
 
 func TestPrepareNeverCallsWriterAndObservesZero(t *testing.T) {
 	w := &CountingWriter{}
-	res, err := Prepare("camp_1", validMotionBody("camp_1"), w)
+	res, err := Prepare("tnt_motion", "camp_1", validMotionBody("camp_1"), w)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestPrepareNeverCallsWriterAndObservesZero(t *testing.T) {
 }
 
 func TestPrepareAcceptsNilWriterWithoutPanic(t *testing.T) {
-	if _, err := Prepare("camp_1", validMotionBody("camp_1"), nil); err != nil {
+	if _, err := Prepare("tnt_motion", "camp_1", validMotionBody("camp_1"), nil); err != nil {
 		t.Fatalf("Prepare with nil writer: %v", err)
 	}
 }

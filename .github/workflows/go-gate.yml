@@ -1,0 +1,29 @@
+# R17d（ap-20261011）：leads server 的 Go 门。evidence-gate 不动。
+# hosted ubuntu；server/go.mod 只有公开依赖（modernc.org/sqlite），无私有模块，
+# 无需跨仓凭据。live matrix 测试无 env 自动 skip，CI 零影响。
+name: go-gate
+
+on:
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/go-gate.yml'
+  push:
+    paths:
+      - 'server/**'
+      - '.github/workflows/go-gate.yml'
+  workflow_dispatch: {}
+
+jobs:
+  go-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: build + test (GOWORK=off)
+        working-directory: server
+        run: |
+          GOWORK=off go build ./...
+          GOWORK=off go test ./... -count=1

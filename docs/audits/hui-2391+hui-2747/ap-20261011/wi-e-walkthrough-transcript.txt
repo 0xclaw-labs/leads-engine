@@ -1,0 +1,48 @@
+# WI-E 浏览器走查 transcript — 2026-10-11T23:14:36Z
+
+## 真实栈（全部本机 loopback，互不相扰）
+- identity stand-in :29310（scratchpad walk 目录下 ident-standin，wire=leads identity client 四端点；会话令牌存 scratchpad 内 chmod600 文件，不入仓不入日志）
+- 真 AG10 matrixdraft :29340（public-ai origin/main ebd537cd 构建；file sqlite walk/ag10.db；grants: tnt_walk/grant_walk_1=active、grant_walk_rev=revoked）
+- 真 leads-server :29301（本分支构建 sha256: 7b48b72a4899056011d7d1733e95d7fdf24cc91f8029d1ff005feaa2790c686d）；FEATURE_MATRIX_HANDOFF=on、MATRIX_DRAFT_BASE_URL=http://127.0.0.1:29340、LEADS_SESSION_COOKIE=leads_session、LEADS_DEDUP_PEPPER=walk-pepper
+- next BFF :29330（next dev，LEADS_SERVER_URL=:29301，catch-all /api/* → /api/v1/*）
+- 预置：sqlite3 直插租户 tnt_walk + 成员 mbr_walk_owner(principal prin_walk_owner=stand-in 会话)；POST /api/v1/leads/intake 种 touch_campaign 线索 lead_535e9775bbf25ebeaa4a97623e1f807f（活动位）
+
+## curl 链路预检（真 leads-server→真 AG10）
+POST /api/v1/campaigns/<lead>/matrix-drafts → 201 draft md_…（另一次清理前预检曾得 md_673553f4e8499812，后清库重走）
+
+## Playwright 走查（channel:'chrome'，headless，双视口）
+脚本：walkthrough.mjs（scratchpad walk 目录，完整副本已入本证据包；会话 cookie=stand-in 令牌；localStorage leads_tenant_id=tnt_walk）
+旅程：打开活动位 → 面板填表（asset/hash/revision/license/brand/payer/asset_source_ref）→ 送矩阵 → 草稿事实表 → 回查（receipt 读真 AG10）→ 断言未知'—'/发布标记 false/扣费标记 false → 回原位
+
+$ node walkthrough.mjs lead_535e9775bbf25ebeaa4a97623e1f807f（自 web/ 目录运行）
+{
+  "desktop": {
+    "viewport": "1440x900",
+    "steps": {
+      "opened": "http://127.0.0.1:29330/leads/lead_535e9775bbf25ebeaa4a97623e1f807f",
+      "draftID": "md_1c7eaba3fd7aef4d",
+      "rechecked": true,
+      "unknownsAreDash": true,
+      "publishFlagFalse": true,
+      "chargeFlagFalse": true,
+      "backAt": "http://127.0.0.1:29330/leads/lead_535e9775bbf25ebeaa4a97623e1f807f",
+      "ms": 3529
+    }
+  },
+  "mobile": {
+    "viewport": "390x844",
+    "steps": {
+      "opened": "http://127.0.0.1:29330/leads/lead_535e9775bbf25ebeaa4a97623e1f807f",
+      "draftID": "md_1c7eaba3fd7aef4d",
+      "rechecked": true,
+      "unknownsAreDash": true,
+      "publishFlagFalse": true,
+      "chargeFlagFalse": true,
+      "backAt": "http://127.0.0.1:29330/leads/lead_535e9775bbf25ebeaa4a97623e1f807f",
+      "ms": 1714
+    }
+  }
+}
+## 结果
+- desktop 1440x900 与 mobile 390x844 双视口全过：创建+幂等重放同 draft_id md_1c7eaba3fd7aef4d、回查完成、未知恒'—'、发布/扣费标记 false、回原位 URL=本页 /leads/<lead>。
+- 截图 8 张（desktop/mobile × 4 步）与本 JSON 同目录存档。

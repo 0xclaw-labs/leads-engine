@@ -1,0 +1,16 @@
+# WI-A live transcript — 2026-10-11T23:00:06Z
+AG10 = public-ai origin/main ebd537cd (git archive 只读提取构建), bin sha256:
+3311869d7d74b8ab16ee48d8b9d11bfb2abb72ab14ccd8a08a29d80682ae7e03  /tmp/ag06-ap2-scratch/ag10/matrixdraft
+
+$ GOWORK=off go test ./internal/httpapi/ -count=1 -run TestMatrixDraftLiveFullChain -v   (无 env)
+=== RUN   TestMatrixDraftLiveFullChainAgainstRealAG10
+    matrix_draft_live_test.go:124: MATRIX_DRAFT_LIVE_BIN / MATRIX_DRAFT_LIVE_URL not set; live AG10 journey skipped
+--- SKIP: TestMatrixDraftLiveFullChainAgainstRealAG10 (0.00s)
+PASS
+ok  	github.com/bianjiefilm/leads-engine/server/internal/httpapi	0.471s
+
+$ GOWORK=off MATRIX_DRAFT_LIVE_BIN=/tmp/ag06-ap2-scratch/ag10/matrixdraft go test ./internal/httpapi/ -count=1 -run TestMatrixDraftLiveFullChain -v
+=== RUN   TestMatrixDraftLiveFullChainAgainstRealAG10
+--- PASS: TestMatrixDraftLiveFullChainAgainstRealAG10 (0.30s)
+PASS
+ok  	github.com/bianjiefilm/leads-engine/server/internal/httpapi	0.848s
