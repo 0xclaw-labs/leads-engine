@@ -34,7 +34,7 @@
 | 外族 run/错租户/过期拒绝 | **PASS** | ErrForeignTenant→403 foreign_tenant、错 campaign→既有 motion 错误、ErrVariantExpired→422 variant_expired、无收件方 422 motion_receiver（单测+httpapi） |
 | CountingWriter 之上真实绑定、nil port 保持可观测 | **PASS** | Prepare 仍零 creative 写入（AssertZero 全绿）；#55 的 CountingWriter 语义未动 |
 | 经 BFF 全链走查（R17e） | **PASS** | wi-e-walkthrough-transcript.txt + 8 张截图 + walkthrough.json（1440/390，chrome） |
-| CI go 门（R17d） | **PASS**（本地模拟命令全绿；runner 实跑见 PR checks） | go-gate.yml；回归-server/web.txt |
+| CI go 门（R17d） | **PASS**（本地模拟命令全绿；runner 实跑见 PR checks） | go-gate.yml；regression-server.txt / regression-web.txt |
 | 正式 SSO/Registry、矩阵 webhook 机器鉴权 | **NOT_RUN** | AG01-2375 链；本地旅程 identity stand-in。解除条件：AG01 交付后替换 stand-in |
 | 真实变体成品/render 执行/原生编辑/出链端点 | **NOT_RUN** | AG09 接收端未就绪；本波只出形状不出链（无 HTTP 签发端点，CountingWriter 断言零写入）。解除条件：AG09 接收端+真实 Motion 工程，用本波形状直接出链验收 |
 | sdk 模块直引 | **UNSUPPORTED（环境）** | leads 公仓 hosted CI 无跨仓私仓凭据；golden vectors 钉死 v0.4.0。解除条件：获授权配置跨仓只读 secret 后切直引复跑字节一致性 |
