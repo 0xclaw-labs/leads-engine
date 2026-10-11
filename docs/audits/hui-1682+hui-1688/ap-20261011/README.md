@@ -61,7 +61,7 @@ main 现状（0d86be4）：
 1. public-ai 源 provider 清单（树 `_worktrees/20261011-agg/public-ai-matrixdraft`，只读）：
    - `ls internal/task/ | grep -E "^source_(modelxing|shuhai|http|execution)"` → 仅 modelxing/shuhai/http/execution（视频/数字人/执行面）。
    - `grep -rhoE 'SourceProviderName = "[a-z0-9-]+"' internal/task/*.go | sort -u` → 唯一 `modelxing-video-v1`。
-   - `grep -rn "reception.phrase\|text.generate\|text\.source\|textsource" internal --include='*.go' | grep -v _test` → 无 text source provider；`text.generate` 仅出现在 `provider_xingmo.go` 的 task-provider capability 路径表（task provider，非 source provider 契约，需部署侧 `XINGMO_MODE=maas` + maas 密钥才产文本）。
+   - `grep -rn "reception.phrase\|text.generate\|text\.source\|textsource" internal --include='*.go' | grep -v _test` → 无 text source provider；`text.generate` 仅出现在 public-ai 仓 `public-ai/internal/task/provider_xingmo.go` 的 task-provider capability 路径表（task provider，非 source provider 契约，需部署侧 `XINGMO_MODE=maas` + maas 密钥才产文本）。
    - 结论与 HUI-2295 preflight 一致：public-ai 无统一 text source provider；`reception.phrase` 无文本产出上游（#53 本地实证：预占 0.01 后 FAILED、`billing_verdict=not_completed`）。
 2. 工作区凭证普查（只看键名，未打印任何值）：
    - `grep -oE '^[A-Za-z_]...' modelxing.env` → MODELXING_BASE/MODELXING_API_KEY（ModelXing 视频/他道，非 platform-task 文本凭证）。
@@ -76,7 +76,7 @@ main 现状（0d86be4）：
 
 ### text source provider 契约需求（交 Root 安排 public-ai 车道；本仓不改 public-ai）
 
-仿 `modelxing-video-v1`（`internal/task/source_modelxing_video.go`：Name/Validate/Start/Query、AsyncReceipt{ReceiptVersion,Executor,JobRef,RequestFingerprint}、观察接纳与指纹校验、无上游幂等键时 async-face only）：
+仿 `modelxing-video-v1`（public-ai 仓 `public-ai/internal/task/source_modelxing_video.go`：Name/Validate/Start/Query、AsyncReceipt{ReceiptVersion,Executor,JobRef,RequestFingerprint}、观察接纳与指纹校验、无上游幂等键时 async-face only）：
 
 1. Provider 名与能力：如 `leads-text-v1`，capability `text.generate`（与 leads 默认一致，或由 `PLATFORM_TASK_TEXT_CAPABILITY` 指定）。
 2. 提交参数（`params` 白名单）：`language`、`prompt`（或 `messages`）、可选 `model`、`temperature`、`max_tokens`；未知字段必须丢弃不透传。
