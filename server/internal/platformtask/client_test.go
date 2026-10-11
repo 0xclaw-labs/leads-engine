@@ -20,6 +20,38 @@ func TestNewRequiresAllThreeKeys(t *testing.T) {
 	}
 }
 
+// R15b text source provider contract (HUI-1682 ap-20261011 README, clause 2):
+// the params whitelist carries the grounded answer under `prompt` (or
+// `messages`); unknown fields are dropped upstream. Sending the answer under
+// `body` would be discarded by a conforming provider and still charged.
+func TestPhraseSendsPromptKeyPerR15b(t *testing.T) {
+	var postBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &postBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"task_id": "tsk_phrase_p", "status": "SUCCEEDED"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok", "acct", "leads-engine")
+	const answer = "营业时间是每天 9:00 到 18:00"
+	got := c.Phrase(context.Background(), PhraseInput{
+		IdempotencyKey: "phrase:k:1", Language: "zh", Body: answer,
+		CitationIDs: []string{"faq_1"},
+	})
+	if got.BillingVerdict != "recorded" || got.CostCents != 1 {
+		t.Fatalf("phrase = %+v", got)
+	}
+	params, _ := postBody["params"].(map[string]any)
+	if params["prompt"] != answer {
+		t.Fatalf("params prompt = %v, want the grounded answer", params["prompt"])
+	}
+	if _, ok := params["body"]; ok {
+		t.Fatalf("params must not carry a body key per R15b: %v", params)
+	}
+}
+
 // HUI-1682: the platform task is the only live text seam. Generate follows the
 // Phrase pattern exactly: hold 0.01 CNY, submit, poll, record one cent on
 // SUCCEEDED only. Everything else stays not_completed and never writes text.
@@ -104,6 +136,29 @@ func TestGenerateCapabilityAndModelOverride(t *testing.T) {
 	params, _ := postBody["params"].(map[string]any)
 	if params["model"] != "glm-5" {
 		t.Fatalf("model = %v", params["model"])
+	}
+}
+
+// A capability rides in the POST URL path; path separators and other special
+// characters must stay escaped inside the single segment (mirrors the
+// url.PathEscape already applied to taskID in get()).
+func TestGenerateEscapesCapabilityInPostURL(t *testing.T) {
+	var escapedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		escapedPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"task_id": "t_esc", "status": "SUCCEEDED", "result_json": `{"text":"好"}`})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok", "acct", "leads-engine")
+	c.TextCapability = "leads.text/v2"
+	got := c.Generate(context.Background(), GenerateInput{IdempotencyKey: "k", Language: "zh", Prompt: "p"})
+	if got.BillingVerdict != "recorded" || got.Text != "好" {
+		t.Fatalf("generate = %+v", got)
+	}
+	if escapedPath != "/internal/v1/tasks/leads.text%2Fv2" {
+		t.Fatalf("capability must stay one escaped path segment, got %s", escapedPath)
 	}
 }
 
