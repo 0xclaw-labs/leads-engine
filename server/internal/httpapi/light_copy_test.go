@@ -1,9 +1,16 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/bianjiefilm/leads-engine/server/internal/platformtask"
 )
 
 func TestLightCopyFeatureOffIsInvisible(t *testing.T) {
@@ -171,4 +178,232 @@ func jsonText(v any) string {
 		return ""
 	}
 	return string(b)
+}
+
+// ---- HUI-1682: the platform task is the only live text seam (2026-10-11). ----
+
+type stubTextGenerator struct {
+	last  platformtask.GenerateInput
+	calls int
+	fn    func(in platformtask.GenerateInput) platformtask.GenerateResult
+}
+
+func (s *stubTextGenerator) Generate(_ context.Context, in platformtask.GenerateInput) platformtask.GenerateResult {
+	s.calls++
+	s.last = in
+	return s.fn(in)
+}
+
+func TestLightCapabilityReportsConfiguredSeam(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureLightCopy: true})
+	tenant, _, _ := h.seed()
+	cap := h.mustDo("GET", "/api/v1/light-copy/capability", sessionOwnerA, tenant, "", 200)
+	if cap["model_ready"] != false || cap["provider"] != nil {
+		t.Fatalf("unconfigured capability must stay honest: %v", cap)
+	}
+	h.api.LightCopyPhraser = &stubTextGenerator{fn: func(in platformtask.GenerateInput) platformtask.GenerateResult {
+		return platformtask.GenerateResult{TaskID: "t", BillingVerdict: "not_completed"}
+	}}
+	ready := h.mustDo("GET", "/api/v1/light-copy/capability", sessionOwnerA, tenant, "", 200)
+	if ready["model_ready"] != true || ready["provider"] != "platformtask:text.generate" {
+		t.Fatalf("configured capability = %v", ready)
+	}
+	if ready["live_charge"].(float64) != 0 {
+		t.Fatalf("live_charge must stay 0: %v", ready)
+	}
+}
+
+func TestLightGenerateRecordsModelProvenanceAndCharge(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureLightCopy: true})
+	tenant, _, contact := h.seed()
+	opp := h.createOpp(t, sessionOwnerA, tenant, contact, "门店开业", "merchant_customer", "")
+	gen := &stubTextGenerator{fn: func(in platformtask.GenerateInput) platformtask.GenerateResult {
+		return platformtask.GenerateResult{TaskID: "tsk_lc_ok", Text: "根据已核实事实写好的开业回复", CostCents: 1, BillingVerdict: "recorded"}
+	}}
+	h.api.LightCopyPhraser = gen
+
+	out := h.mustDo("POST", "/api/v1/opportunities/"+opp+"/light-copy/reply/generate", sessionOwnerA, tenant, `{"selected":["title"]}`, 200)
+	draft := out["draft"].(map[string]any)
+	if draft["body"] != "根据已核实事实写好的开业回复" || draft["generated"] != true || draft["origin"] != "model" {
+		t.Fatalf("draft provenance = %v", draft)
+	}
+	if draft["live_charge"].(float64) != 1 || draft["content_version"].(float64) != 1 {
+		t.Fatalf("draft charge/version = %v", draft)
+	}
+	if draft["user_confirmed"] == true || draft["sent"] == true || draft["published"] == true || draft["marketing_permitted"] == true {
+		t.Fatalf("generated draft must stay unconfirmed and unsent: %v", draft)
+	}
+	model := out["model"].(map[string]any)
+	if model["task_id"] != "tsk_lc_ok" || model["billing_verdict"] != "recorded" || model["cost_cents"].(float64) != 1 {
+		t.Fatalf("model receipt = %v", model)
+	}
+	if gen.calls != 1 {
+		t.Fatalf("generator calls = %d", gen.calls)
+	}
+	if !strings.Contains(gen.last.Prompt, "门店开业") || strings.Contains(gen.last.Prompt, "{{") {
+		t.Fatalf("prompt = %q", gen.last.Prompt)
+	}
+	if !strings.HasPrefix(gen.last.IdempotencyKey, "lightcopy:opportunity:"+opp+":reply:") {
+		t.Fatalf("idempotency key = %q", gen.last.IdempotencyKey)
+	}
+
+	// Confirm keeps provenance and the recorded charge; it still does not send.
+	confirmed := h.mustDo("POST", "/api/v1/opportunities/"+opp+"/light-copy/reply/confirm", sessionOwnerA, tenant, `{}`, 200)
+	if confirmed["user_confirmed"] != true || confirmed["generated"] != true || confirmed["origin"] != "model" || confirmed["live_charge"].(float64) != 1 {
+		t.Fatalf("confirm erased provenance: %v", confirmed)
+	}
+
+	// A manual edit resets provenance and charge.
+	edited := h.mustDo("PUT", "/api/v1/opportunities/"+opp+"/light-copy/reply", sessionOwnerA, tenant, `{"body":"人工改稿"}`, 200)
+	if edited["generated"] == true || edited["origin"] != "manual" || edited["live_charge"].(float64) != 0 {
+		t.Fatalf("manual edit must reset provenance: %v", edited)
+	}
+
+	var bad int
+	if err := h.api.St.DB.QueryRow(`SELECT COUNT(*) FROM light_copy_drafts WHERE sent!=0 OR published!=0 OR marketing_permitted!=0`).Scan(&bad); err != nil {
+		t.Fatal(err)
+	}
+	if bad != 0 {
+		t.Fatalf("a draft row claims send, publish, or consent")
+	}
+	var inconsistent int
+	if err := h.api.St.DB.QueryRow(`SELECT COUNT(*) FROM light_copy_drafts WHERE generated!=0 AND (origin!='model' OR live_charge<=0)`).Scan(&inconsistent); err != nil {
+		t.Fatal(err)
+	}
+	if inconsistent != 0 {
+		t.Fatalf("generated provenance without a recorded charge")
+	}
+}
+
+func TestLightGenerateHonestFailures(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureLightCopy: true})
+	tenant, _, contact := h.seed()
+	opp := h.createOpp(t, sessionOwnerA, tenant, contact, "门店开业", "merchant_customer", "")
+	cases := []struct {
+		name    string
+		result  platformtask.GenerateResult
+		status  int
+		errCode string
+	}{
+		{"not_completed", platformtask.GenerateResult{TaskID: "tsk_nc", BillingVerdict: "not_completed"}, 409, "generation_not_completed"},
+		{"recorded_empty_text", platformtask.GenerateResult{TaskID: "tsk_empty", CostCents: 1, BillingVerdict: "recorded", Text: "   "}, 409, "model_output_unusable"},
+		{"placeholder", platformtask.GenerateResult{TaskID: "tsk_ph", CostCents: 1, BillingVerdict: "recorded", Text: "您好{{name}}，这是模板占位"}, 409, "placeholder_refused"},
+	}
+	for _, tc := range cases {
+		gen := &stubTextGenerator{fn: func(in platformtask.GenerateInput) platformtask.GenerateResult { return tc.result }}
+		h.api.LightCopyPhraser = gen
+		status, got, _ := h.do("POST", "/api/v1/opportunities/"+opp+"/light-copy/reply/generate", sessionOwnerA, tenant, `{"selected":["title"]}`)
+		if status != tc.status || got["error"] != tc.errCode {
+			t.Fatalf("%s = %d %v", tc.name, status, got)
+		}
+		model := got["model"].(map[string]any)
+		if model["billing_verdict"] != tc.result.BillingVerdict || model["task_id"] != tc.result.TaskID {
+			t.Fatalf("%s receipt = %v", tc.name, model)
+		}
+		if model["cost_cents"].(float64) != float64(tc.result.CostCents) {
+			t.Fatalf("%s cost = %v", tc.name, model["cost_cents"])
+		}
+		var rows int
+		if err := h.api.St.DB.QueryRow(`SELECT COUNT(*) FROM light_copy_drafts WHERE tenant_id=? AND subject_id=? AND kind='reply'`, tenant, opp).Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 0 {
+			t.Fatalf("%s wrote a draft row on failure", tc.name)
+		}
+	}
+}
+
+func TestLightGenerateFactGateRunsBeforeTheMeter(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureLightCopy: true})
+	tenant, _, contact := h.seed()
+	opp := h.createOpp(t, sessionOwnerA, tenant, contact, "门店开业", "merchant_customer", "")
+	gen := &stubTextGenerator{fn: func(in platformtask.GenerateInput) platformtask.GenerateResult {
+		return platformtask.GenerateResult{TaskID: "t", BillingVerdict: "recorded", Text: "正文", CostCents: 1}
+	}}
+	h.api.LightCopyPhraser = gen
+
+	status, got, _ := h.do("POST", "/api/v1/opportunities/"+opp+"/light-copy/reply/generate", sessionOwnerA, tenant, `{"selected":["contact_text"]}`)
+	if status != 400 || got["error"] != "unauthorized_field" {
+		t.Fatalf("unauthorized = %d %v", status, got)
+	}
+	status, got, _ = h.do("POST", "/api/v1/opportunities/"+opp+"/light-copy/reply/generate", sessionOwnerA, tenant, `{"selected":[]}`)
+	if status != 400 || got["error"] != "nothing_selected" {
+		t.Fatalf("nothing = %d %v", status, got)
+	}
+	if gen.calls != 0 {
+		t.Fatalf("fact gate must run before the metered call: %d", gen.calls)
+	}
+}
+
+func TestLightGenerateCrossTenantRefused(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureLightCopy: true})
+	tenant, _, contact := h.seed()
+	opp := h.createOpp(t, sessionOwnerA, tenant, contact, "门店开业", "merchant_customer", "")
+	gen := &stubTextGenerator{fn: func(in platformtask.GenerateInput) platformtask.GenerateResult {
+		return platformtask.GenerateResult{TaskID: "t", BillingVerdict: "recorded", Text: "正文", CostCents: 1}
+	}}
+	h.api.LightCopyPhraser = gen
+	status, _, _ := h.do("POST", "/api/v1/opportunities/"+opp+"/light-copy/reply/generate", sessionOwnerB, tenant, `{"selected":["title"]}`)
+	if status != 403 {
+		t.Fatalf("cross tenant generate = %d", status)
+	}
+	if gen.calls != 0 {
+		t.Fatalf("cross tenant reached the meter")
+	}
+}
+
+// Open() wires the light-copy seam from the three platform task keys, with the
+// capability/model taken from the text-specific env overrides.
+func TestLightGenerateThroughOpenWiredStandInTask(t *testing.T) {
+	var mu sync.Mutex
+	prompts := map[string]string{}
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			var body struct {
+				IdempotencyKey string         `json:"idempotency_key"`
+				Params         map[string]any `json:"params"`
+			}
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &body)
+			mu.Lock()
+			prompts[body.IdempotencyKey] = body.Params["prompt"].(string)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"task_id": "tsk_open_1", "status": "QUEUED"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"task_id": "tsk_open_1", "status": "SUCCEEDED",
+			"result_json": `{"text":"按真实任务返回的正文"}`,
+		})
+	}))
+	defer taskSrv.Close()
+
+	h := newHarnessOpts(t, harnessOpts{featureLightCopy: true, platformTaskBase: taskSrv.URL})
+	if h.api.LightCopyPhraser == nil || h.api.ReceptionPhraser == nil {
+		t.Fatalf("Open did not wire the task seams")
+	}
+	if h.cfg.TaskTextCapability != "leads.text.standin" {
+		t.Fatalf("text capability = %q", h.cfg.TaskTextCapability)
+	}
+	tenant, _, contact := h.seed()
+	opp := h.createOpp(t, sessionOwnerA, tenant, contact, "门店开业", "merchant_customer", "")
+	cap := h.mustDo("GET", "/api/v1/light-copy/capability", sessionOwnerA, tenant, "", 200)
+	if cap["model_ready"] != true || cap["provider"] != "platformtask:leads.text.standin" {
+		t.Fatalf("capability = %v", cap)
+	}
+	out := h.mustDo("POST", "/api/v1/opportunities/"+opp+"/light-copy/reply/generate", sessionOwnerA, tenant, `{"selected":["title"]}`, 200)
+	if out["draft"].(map[string]any)["body"] != "按真实任务返回的正文" {
+		t.Fatalf("generate = %v", out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(prompts) != 1 {
+		t.Fatalf("prompts = %v", prompts)
+	}
+	for key, prompt := range prompts {
+		if !strings.Contains(prompt, "门店开业") {
+			t.Fatalf("prompt %q lost the allowed fact", key)
+		}
+	}
 }

@@ -1,0 +1,28 @@
+?   	github.com/bianjiefilm/leads-engine/server/cmd/leads-server	[no test files]
+ok  	github.com/bianjiefilm/leads-engine/server/internal/appregistry	0.457s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/authz	0.824s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/campaignmotion	1.255s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/channelix	1.626s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/config	2.043s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/crafthandoff	2.471s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/crmtenant	3.454s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/db	5.301s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/handoffsender	4.961s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/httpapi	28.212s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/identity	3.398s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/intentgrade	3.809s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/lightcopy	4.193s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/matrixhandoff	4.557s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/notifyingest	4.931s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/outbound	5.282s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/platform	4.721s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/platformtask	3.308s
+?   	github.com/bianjiefilm/leads-engine/server/internal/provision	[no test files]
+ok  	github.com/bianjiefilm/leads-engine/server/internal/reception	3.473s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/redact	3.457s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/roi	3.578s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/sopreach	3.882s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/store	11.063s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/subscription	3.874s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/tenantmap	3.889s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/workbench	3.928s

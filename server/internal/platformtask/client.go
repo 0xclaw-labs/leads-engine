@@ -15,6 +15,12 @@ const (
 	phraseCapability = "reception.phrase"
 	phraseAmountCNY  = 0.01
 	phraseCostCents  = 1
+
+	// DefaultTextCapability is the upstream capability used for light-copy
+	// generation when PLATFORM_TASK_TEXT_CAPABILITY is not set.
+	DefaultTextCapability = "text.generate"
+	textAmountCNY         = 0.01
+	textCostCents         = 1
 )
 
 // Client calls the platform task API. It never logs the token or the body.
@@ -24,6 +30,10 @@ type Client struct {
 	AccountID string
 	AppID     string
 	HTTP      *http.Client
+	// TextCapability routes light-copy generation. Empty keeps the upstream
+	// default. TextModel is optional and forwarded as a param when set.
+	TextCapability string
+	TextModel      string
 }
 
 // New returns nil unless base URL, token, and account id are all set.
@@ -61,8 +71,9 @@ type phraseBody struct {
 }
 
 type taskSummary struct {
-	TaskID string `json:"task_id"`
-	Status string `json:"status"`
+	TaskID     string `json:"task_id"`
+	Status     string `json:"status"`
+	ResultJSON string `json:"result_json"`
 }
 
 // Phrase submits one grounded answer and polls until the task ends.
@@ -97,7 +108,7 @@ func (c *Client) Phrase(ctx context.Context, in PhraseInput) PhraseResult {
 	if err != nil {
 		return fallback
 	}
-	sum, err := c.post(ctx, raw)
+	sum, err := c.post(ctx, phraseCapability, raw)
 	if err != nil {
 		return fallback
 	}
@@ -115,6 +126,84 @@ func (c *Client) Phrase(ctx context.Context, in PhraseInput) PhraseResult {
 		return PhraseResult{TaskID: sum.TaskID, CostCents: phraseCostCents, BillingVerdict: "recorded"}
 	}
 	return PhraseResult{TaskID: sum.TaskID, BillingVerdict: "not_completed"}
+}
+
+// Generate submits one light-copy generation task and polls until it ends.
+// It follows the Phrase billing pattern exactly: a 0.01 CNY hold at submit and
+// a recorded one-cent receipt only after SUCCEEDED. Text is read from the
+// task's result_json; a succeeded task without usable text stays recorded with
+// an empty Text so the real charge is never hidden. Timeouts and failures stay
+// not_completed.
+func (c *Client) Generate(ctx context.Context, in GenerateInput) GenerateResult {
+	fallback := GenerateResult{BillingVerdict: "not_completed"}
+	if c == nil || strings.TrimSpace(c.BaseURL) == "" {
+		return fallback
+	}
+	timeout := 2 * time.Second
+	if c.HTTP != nil && c.HTTP.Timeout > 0 {
+		timeout = c.HTTP.Timeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	capability := strings.TrimSpace(c.TextCapability)
+	if capability == "" {
+		capability = DefaultTextCapability
+	}
+	params := map[string]any{
+		"language": in.Language,
+		"prompt":   in.Prompt,
+	}
+	if model := strings.TrimSpace(c.TextModel); model != "" {
+		params["model"] = model
+	}
+	payload := phraseBody{
+		AppID: c.AppID, AccountID: c.AccountID, IdempotencyKey: in.IdempotencyKey,
+		Capability: capability,
+		Params:     params,
+	}
+	payload.Billing.Mode = "hold"
+	payload.Billing.AmountCNY = textAmountCNY
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return fallback
+	}
+	sum, err := c.post(ctx, capability, raw)
+	if err != nil {
+		return fallback
+	}
+	for !terminal(sum.Status) {
+		if err := sleep(ctx, 15*time.Millisecond); err != nil {
+			return GenerateResult{TaskID: sum.TaskID, BillingVerdict: "not_completed"}
+		}
+		next, err := c.get(ctx, sum.TaskID)
+		if err != nil {
+			return GenerateResult{TaskID: sum.TaskID, BillingVerdict: "not_completed"}
+		}
+		sum = next
+	}
+	if sum.Status != "SUCCEEDED" || strings.TrimSpace(sum.TaskID) == "" {
+		return GenerateResult{TaskID: sum.TaskID, BillingVerdict: "not_completed"}
+	}
+	return GenerateResult{
+		TaskID: sum.TaskID, Text: resultText(sum.ResultJSON),
+		CostCents: textCostCents, BillingVerdict: "recorded",
+	}
+}
+
+// resultText defensively reads {"text": ...} out of a result_json string.
+// Anything else yields no text; the caller still sees the recorded charge.
+func resultText(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var parsed struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Text)
 }
 
 func terminal(status string) bool {
@@ -137,8 +226,8 @@ func sleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
-func (c *Client) post(ctx context.Context, raw []byte) (taskSummary, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/internal/v1/tasks/"+phraseCapability, bytes.NewReader(raw))
+func (c *Client) post(ctx context.Context, capability string, raw []byte) (taskSummary, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/internal/v1/tasks/"+capability, bytes.NewReader(raw))
 	if err != nil {
 		return taskSummary{}, err
 	}

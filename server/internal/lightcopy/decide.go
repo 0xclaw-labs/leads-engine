@@ -6,6 +6,8 @@
 package lightcopy
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -24,6 +26,7 @@ const (
 	ToolAiCut        = "aicut"
 
 	OriginManual = "manual"
+	OriginModel  = "model"
 
 	StatusFailed   = "failed"
 	StatusRecorded = "recorded"
@@ -58,11 +61,13 @@ type Draft struct {
 	LiveCharge         int
 }
 
-// ModelOutput is text claimed to come from a model. FromLiveModel is never
-// set by this repository: there is no model client here.
+// ModelOutput is text claimed to come from a model. Callers set FromLiveModel
+// only for a recorded platform task that returned text; CostCents is the
+// recorded charge that came back with it.
 type ModelOutput struct {
 	FromLiveModel bool
 	Text          string
+	CostCents     int
 }
 
 // Subject is the current opportunity or campaign snapshot. Contact text,
@@ -118,8 +123,10 @@ type HandoffInput struct {
 	Existing        *Handoff
 }
 
-// Generate refuses to write model text unless a live model produced it, and
-// refuses template placeholders even then. This process never sets FromLiveModel.
+// Generate writes model text only when a recorded platform task produced it,
+// and refuses template placeholders even then. The draft keeps model
+// provenance and the recorded charge, stays unsent, and requires a fresh
+// confirmation. A manual edit later resets all of it.
 func Generate(current Draft, model ModelOutput) (Draft, string) {
 	if !model.FromLiveModel || strings.TrimSpace(model.Text) == "" {
 		return current, ReasonModelUnavailable
@@ -129,19 +136,57 @@ func Generate(current Draft, model ModelOutput) (Draft, string) {
 	}
 	next := current
 	next.Body = strings.TrimSpace(model.Text)
-	next.Origin = OriginManual
-	next.Generated = false
+	next.Origin = OriginModel
+	next.Generated = true
+	next.LiveCharge = model.CostCents
 	next.Sent = false
 	next.Published = false
 	next.MarketingPermitted = false
 	next.UserConfirmed = false
-	next.LiveCharge = 0
 	if next.ContentVersion < 1 {
 		next.ContentVersion = 1
 	} else {
 		next.ContentVersion++
 	}
 	return next, ""
+}
+
+var promptKindLabel = map[string]string{
+	KindReply: "回复",
+	KindEmail: "邮件",
+	KindBrief: "营销简报",
+}
+
+// Prompt builds the generation instruction from the projected packet only.
+// Fact lines are deterministic (sorted keys) so retries hit the same
+// idempotency fingerprint upstream, and an empty packet never invents numbers.
+func Prompt(kind, language string, packet Packet) string {
+	if language == "" {
+		language = "zh"
+	}
+	label := promptKindLabel[kind]
+	if label == "" {
+		label = kind
+	}
+	var b strings.Builder
+	b.WriteString("请根据以下已核实事实，写一段" + language + "的" + label + "文案。")
+	b.WriteString("只使用这些事实，不要编造价格、库存、订单状态或承诺：\n")
+	keys := make([]string, 0, len(packet.Facts))
+	for key := range packet.Facts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "price_cents":
+			b.WriteString("- price_cents: 价格证明，单位为分，数值 ")
+			fmt.Fprintf(&b, "%d\n", packet.Facts[key])
+		default:
+			b.WriteString("- " + key + ": ")
+			b.WriteString(fmt.Sprintf("%v", packet.Facts[key]) + "\n")
+		}
+	}
+	return b.String()
 }
 
 func isPlaceholder(text string) bool {
@@ -172,14 +217,13 @@ func SaveManual(current Draft, body string) (Draft, string) {
 }
 
 // Confirm records the user's acceptance and does not send, publish, or grant
-// marketing permission.
+// marketing permission. Model provenance and the recorded charge survive a
+// confirm: erasing them would hide a real consumption.
 func Confirm(current Draft) Draft {
 	current.UserConfirmed = true
 	current.Sent = false
 	current.Published = false
 	current.MarketingPermitted = false
-	current.Generated = false
-	current.LiveCharge = 0
 	return current
 }
 

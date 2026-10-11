@@ -150,6 +150,7 @@ type harnessOpts struct {
 	featureROI              bool   // FEATURE_ROI=on (HUI-1696)
 	featureSOP              bool   // FEATURE_SOP_REACH=on (HUI-1689)
 	featureLightCopy        bool   // FEATURE_LIGHT_COPY=on (HUI-1682)
+	platformTaskBase        string // three PLATFORM_TASK_* keys point here when set
 	featureOutbound         bool   // FEATURE_OUTBOUND_CALL=on (HUI-1687)
 	featureCampaignMotion   bool   // FEATURE_CAMPAIGN_MOTION=on (HUI-2747)
 	featureMatrixHandoff    bool   // FEATURE_MATRIX_HANDOFF=on (HUI-2391)
@@ -277,6 +278,23 @@ func newHarnessOpts(t *testing.T, opts harnessOpts) *harness {
 		case "FEATURE_CAMPAIGN_MOTION":
 			if opts.featureCampaignMotion {
 				return "on"
+			}
+			return ""
+		case "PLATFORM_TASK_BASE_URL":
+			return opts.platformTaskBase
+		case "PLATFORM_TASK_TOKEN":
+			if opts.platformTaskBase != "" {
+				return "test-task-token"
+			}
+			return ""
+		case "PLATFORM_TASK_ACCOUNT_ID":
+			if opts.platformTaskBase != "" {
+				return "test-task-account"
+			}
+			return ""
+		case "PLATFORM_TASK_TEXT_CAPABILITY":
+			if opts.platformTaskBase != "" {
+				return "leads.text.standin"
 			}
 			return ""
 		case "RECEPTION_VISITOR_PEPPER":

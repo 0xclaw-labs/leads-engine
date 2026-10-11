@@ -1,6 +1,7 @@
 package lightcopy
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,6 +24,75 @@ func TestGenerateRejectsTemplatePlaceholder(t *testing.T) {
 	_, reason := Generate(Draft{}, ModelOutput{FromLiveModel: true, Text: "您好{{name}}，这是模板占位"})
 	if reason != ReasonPlaceholder {
 		t.Fatalf("reason = %q, want %s", reason, ReasonPlaceholder)
+	}
+}
+
+// HUI-1682: when a real platform-task generation returns text, the draft must
+// carry the model provenance and the real recorded charge, stay unsent, and
+// require confirmation again. A manual edit resets provenance; confirming
+// must not erase it.
+func TestGenerateWithLiveModelMarksProvenanceAndCharge(t *testing.T) {
+	before := Draft{Body: "旧正文", Origin: OriginManual, ContentVersion: 2, UserConfirmed: true}
+	got, reason := Generate(before, ModelOutput{FromLiveModel: true, Text: "  根据门店活动写好的正文  ", CostCents: 1})
+	if reason != "" {
+		t.Fatalf("reason = %q", reason)
+	}
+	if got.Body != "根据门店活动写好的正文" {
+		t.Fatalf("body = %q", got.Body)
+	}
+	if !got.Generated || got.Origin != OriginModel || got.LiveCharge != 1 {
+		t.Fatalf("provenance = %+v", got)
+	}
+	if got.ContentVersion != 3 {
+		t.Fatalf("version = %d", got.ContentVersion)
+	}
+	if got.UserConfirmed || got.Sent || got.Published || got.MarketingPermitted {
+		t.Fatalf("generated draft must stay unconfirmed and unsent: %+v", got)
+	}
+
+	confirmed := Confirm(got)
+	if !confirmed.UserConfirmed || !confirmed.Generated || confirmed.Origin != OriginModel || confirmed.LiveCharge != 1 {
+		t.Fatalf("confirm erased model provenance or charge: %+v", confirmed)
+	}
+	if confirmed.Sent || confirmed.Published || confirmed.MarketingPermitted {
+		t.Fatalf("confirm must not send or publish: %+v", confirmed)
+	}
+
+	edited, r := SaveManual(confirmed, "人工改稿覆盖模型正文")
+	if r != "" || edited.Body != "人工改稿覆盖模型正文" {
+		t.Fatalf("edit = %+v %q", edited, r)
+	}
+	if edited.Generated || edited.Origin != OriginManual || edited.LiveCharge != 0 || edited.UserConfirmed {
+		t.Fatalf("manual edit must reset model provenance: %+v", edited)
+	}
+	if edited.ContentVersion != 4 {
+		t.Fatalf("edit version = %d", edited.ContentVersion)
+	}
+}
+
+// The prompt handed to the platform task carries only allow-listed facts, in a
+// deterministic order, and never invents numbers on an empty packet.
+func TestPromptCarriesOnlyAllowListedFacts(t *testing.T) {
+	packet := Packet{SubjectKind: KindOpportunity, SubjectID: "opp_1", Facts: map[string]any{
+		"title": "门店开业", "price_cents": int64(12800),
+	}}
+	p := Prompt(KindReply, "zh", packet)
+	if !strings.Contains(p, "门店开业") || !strings.Contains(p, "12800") {
+		t.Fatalf("prompt dropped allowed facts: %q", p)
+	}
+	if !strings.Contains(p, "回复") {
+		t.Fatalf("prompt missing kind label: %q", p)
+	}
+	again := Prompt(KindReply, "zh", packet)
+	if again != p {
+		t.Fatalf("prompt is not deterministic:\n%q\n%q", p, again)
+	}
+	empty := Prompt(KindEmail, "zh", Packet{SubjectKind: KindOpportunity, SubjectID: "opp_1", Facts: map[string]any{}})
+	if strings.Contains(empty, "12800") || strings.Contains(empty, "{{") {
+		t.Fatalf("empty packet invented facts: %q", empty)
+	}
+	if !strings.Contains(empty, "邮件") {
+		t.Fatalf("empty prompt missing kind label: %q", empty)
 	}
 }
 

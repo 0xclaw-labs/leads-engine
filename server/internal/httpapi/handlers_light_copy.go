@@ -7,11 +7,14 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bianjiefilm/leads-engine/server/internal/authz"
 	"github.com/bianjiefilm/leads-engine/server/internal/lightcopy"
+	"github.com/bianjiefilm/leads-engine/server/internal/platformtask"
 	"github.com/bianjiefilm/leads-engine/server/internal/store"
 )
 
@@ -46,13 +49,31 @@ func (s *Server) mountLightSubject(mux *http.ServeMux, segment, subjectKind stri
 	}))
 }
 
+// textCapability reports the effective platform-task capability used for
+// light-copy generation.
+func (s *Server) textCapability() string {
+	if c := strings.TrimSpace(s.Cfg.TaskTextCapability); c != "" {
+		return c
+	}
+	return platformtask.DefaultTextCapability
+}
+
 func (s *Server) handleLightCapability(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"model_ready": false,
+	ready := s.LightCopyPhraser != nil
+	note := "没有接入真实文案模型。生成会失败并说明原因，不会用模板占位。保存和手改不需要模型。生成完成不等于已发送、已发布或已取得营销许可。"
+	if ready {
+		note = "文案生成走平台任务计量（报价/预占/结算沿既有语义）。任务未完成或未返回正文时仍然拒绝，不写占位。生成完成不等于已发送、已发布或已取得营销许可。"
+	}
+	payload := map[string]any{
+		"model_ready": ready,
 		"live_charge": 0,
 		"tools":       []string{lightcopy.ToolGoBoost, lightcopy.ToolProductImage, lightcopy.ToolDigitalHuman, lightcopy.ToolAiCut},
-		"note":        "没有接入真实文案模型。生成会失败并说明原因，不会用模板占位。保存和手改不需要模型。生成完成不等于已发送、已发布或已取得营销许可。",
-	})
+		"note":        note,
+	}
+	if ready {
+		payload["provider"] = "platformtask:" + s.textCapability()
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func validLightKind(kind string) bool {
@@ -150,25 +171,86 @@ func (s *Server) handleLightGenerate(w http.ResponseWriter, r *http.Request, sub
 		fail(w, http.StatusBadRequest, "bad_request", "kind must be reply, email, or marketing_brief")
 		return
 	}
+	var in struct {
+		Selected []string `json:"selected"`
+		Language string   `json:"language"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	refused := func(code, message string, receipt map[string]any) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": code, "message": message, "model": receipt,
+			"generated": false, "sent": false, "published": false, "marketing_permitted": false,
+		})
+	}
+	if s.LightCopyPhraser == nil {
+		s.Log.Printf("light copy generate refused tenant=%s subject=%s kind=%s reason=%s", sub.TenantID, sub.ID, kind, lightcopy.ReasonModelUnavailable)
+		refused(lightcopy.ReasonModelUnavailable, "没有接入真实文案模型，不能生成正文，也不会用模板占位。请在当前页手写或修改草稿。",
+			map[string]any{"task_id": "", "cost_cents": 0, "billing_verdict": "not_completed"})
+		return
+	}
 	current, err := s.St.GetLightDraft(sub.TenantID, sub.Kind, sub.ID, kind)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		fail(w, http.StatusInternalServerError, "internal", "draft lookup failed")
 		return
 	}
-	_, reason := lightcopy.Generate(draftToRule(current), lightcopy.ModelOutput{})
-	if reason != lightcopy.ReasonModelUnavailable {
-		fail(w, http.StatusConflict, reason, "不能使用占位正文")
+	if errors.Is(err, sql.ErrNoRows) {
+		current = store.LightDraft{}
+	}
+	// The fact gate runs before any metered call: only allow-listed facts can
+	// reach the prompt, and a bad selection never costs anything.
+	packet, reason := lightcopy.Project(callerFrom(r).Member.TenantID, sub, in.Selected, time.Now().UTC())
+	if reason != "" {
+		fail(w, http.StatusBadRequest, reason, factMessage(reason))
 		return
 	}
-	s.Log.Printf("light copy generate refused tenant=%s subject=%s kind=%s reason=%s", sub.TenantID, sub.ID, kind, reason)
-	writeJSON(w, http.StatusConflict, map[string]any{
-		"error":               reason,
-		"message":             "没有接入真实文案模型，不能生成正文，也不会用模板占位。请在当前页手写或修改草稿。",
-		"generated":           false,
-		"sent":                false,
-		"published":           false,
-		"marketing_permitted": false,
+	lang := strings.TrimSpace(in.Language)
+	if lang == "" {
+		lang = "zh"
+	}
+	key := "lightcopy:" + sub.Kind + ":" + sub.ID + ":" + kind + ":v" + strconv.Itoa(current.ContentVersion) + ":" + selectedKey(in.Selected)
+	result := s.LightCopyPhraser.Generate(r.Context(), platformtask.GenerateInput{
+		IdempotencyKey: key, Language: lang, Prompt: lightcopy.Prompt(kind, lang, packet),
 	})
+	receipt := map[string]any{
+		"task_id": result.TaskID, "cost_cents": result.CostCents, "billing_verdict": result.BillingVerdict,
+	}
+	if result.BillingVerdict != "recorded" {
+		s.Log.Printf("light copy generate not completed tenant=%s subject=%s kind=%s task=%s verdict=%s", sub.TenantID, sub.ID, kind, result.TaskID, result.BillingVerdict)
+		refused("generation_not_completed", "平台任务没有完成，这次没有生成正文，也没有记账。可以重试或手写。", receipt)
+		return
+	}
+	if strings.TrimSpace(result.Text) == "" {
+		s.Log.Printf("light copy generate unusable output tenant=%s subject=%s kind=%s task=%s cost=%d", sub.TenantID, sub.ID, kind, result.TaskID, result.CostCents)
+		refused("model_output_unusable", "平台任务已完成并记账，但没有返回可用正文。这次不写草稿，账务按 recorded 如实保留。", receipt)
+		return
+	}
+	next, reason := lightcopy.Generate(draftToRule(current), lightcopy.ModelOutput{
+		FromLiveModel: true, Text: result.Text, CostCents: result.CostCents,
+	})
+	if reason == lightcopy.ReasonPlaceholder {
+		s.Log.Printf("light copy generate placeholder tenant=%s subject=%s kind=%s task=%s cost=%d", sub.TenantID, sub.ID, kind, result.TaskID, result.CostCents)
+		refused(lightcopy.ReasonPlaceholder, "不能使用占位正文。任务已记账，正文不写入。", receipt)
+		return
+	}
+	if reason != "" {
+		refused("model_output_unusable", "模型输出没有通过检查，正文不写入。", receipt)
+		return
+	}
+	saved, err := s.St.SaveLightDraft(ruleToDraft(next, current, sub, kind, callerFrom(r).Member.ID))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "internal", "draft save failed")
+		return
+	}
+	s.Log.Printf("light copy generate tenant=%s subject=%s kind=%s version=%d task=%s verdict=%s cost=%d", sub.TenantID, sub.ID, kind, saved.ContentVersion, result.TaskID, result.BillingVerdict, result.CostCents)
+	writeJSON(w, http.StatusOK, map[string]any{"draft": saved, "model": receipt})
+}
+
+func selectedKey(selected []string) string {
+	cp := append([]string(nil), selected...)
+	sort.Strings(cp)
+	return strings.Join(cp, "+")
 }
 
 func (s *Server) handleLightConfirm(w http.ResponseWriter, r *http.Request, subjectKind string) {
@@ -321,8 +403,8 @@ func (s *Server) handleLightHandoff(w http.ResponseWriter, r *http.Request, subj
 func draftToRule(d store.LightDraft) lightcopy.Draft {
 	return lightcopy.Draft{
 		Body: d.Body, Origin: d.Origin, ContentVersion: d.ContentVersion,
-		Generated: false, Sent: false, Published: false, MarketingPermitted: false,
-		UserConfirmed: d.UserConfirmed, LiveCharge: 0,
+		Generated: d.Generated, Sent: d.Sent, Published: d.Published, MarketingPermitted: d.MarketingPermitted,
+		UserConfirmed: d.UserConfirmed, LiveCharge: d.LiveCharge,
 	}
 }
 
@@ -331,8 +413,9 @@ func ruleToDraft(next lightcopy.Draft, current store.LightDraft, sub lightcopy.S
 	created := current.CreatedAt
 	return store.LightDraft{
 		ID: id, TenantID: sub.TenantID, SubjectKind: sub.Kind, SubjectID: sub.ID, Kind: kind,
-		Body: next.Body, Origin: lightcopy.OriginManual, ContentVersion: next.ContentVersion,
-		UserConfirmed: next.UserConfirmed, UpdatedBy: memberID, CreatedAt: created,
+		Body: next.Body, Origin: next.Origin, ContentVersion: next.ContentVersion,
+		Generated: next.Generated, UserConfirmed: next.UserConfirmed, LiveCharge: next.LiveCharge,
+		UpdatedBy: memberID, CreatedAt: created,
 	}
 }
 

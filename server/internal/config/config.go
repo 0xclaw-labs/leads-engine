@@ -243,6 +243,14 @@ type Config struct {
 	TaskBaseURL   string
 	TaskToken     string
 	TaskAccountID string
+	// TaskTextCapability routes HUI-1682 light-copy generation on the platform
+	// task. Empty keeps the platform default. Configured keys alone make
+	// model_ready true only in the sense that a metered seam exists; a
+	// succeeded task still has to return real text.
+	TaskTextCapability string
+	// TaskTextModel is an optional upstream model hint. Empty keeps the
+	// upstream default.
+	TaskTextModel string
 	// IngestSources is the deployment allowlist. Empty unless the flag is on.
 	IngestSources []IngestSource
 	// TenantBindings is the operator map. Empty means no explicit binding.
@@ -350,6 +358,8 @@ func fromEnv(get func(string) string) Config {
 		TaskBaseURL:                get("PLATFORM_TASK_BASE_URL"),
 		TaskToken:                  get("PLATFORM_TASK_TOKEN"),
 		TaskAccountID:              get("PLATFORM_TASK_ACCOUNT_ID"),
+		TaskTextCapability:         strings.TrimSpace(get("PLATFORM_TASK_TEXT_CAPABILITY")),
+		TaskTextModel:              strings.TrimSpace(get("PLATFORM_TASK_TEXT_MODEL")),
 		IngestSources:              parseIngestSources(get),
 		TenantBindings:             bindings,
 		TenantBindingProblems:      bindingProblems,
