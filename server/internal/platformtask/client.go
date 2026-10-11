@@ -16,7 +16,9 @@ const (
 	phraseAmountCNY  = 0.01
 	phraseCostCents  = 1
 
-	defaultTextCapability = "text.generate"
+	// DefaultTextCapability is the upstream capability used for light-copy
+	// generation when PLATFORM_TASK_TEXT_CAPABILITY is not set.
+	DefaultTextCapability = "text.generate"
 	textAmountCNY         = 0.01
 	textCostCents         = 1
 )
@@ -145,7 +147,7 @@ func (c *Client) Generate(ctx context.Context, in GenerateInput) GenerateResult 
 	defer cancel()
 	capability := strings.TrimSpace(c.TextCapability)
 	if capability == "" {
-		capability = defaultTextCapability
+		capability = DefaultTextCapability
 	}
 	params := map[string]any{
 		"language": in.Language,
