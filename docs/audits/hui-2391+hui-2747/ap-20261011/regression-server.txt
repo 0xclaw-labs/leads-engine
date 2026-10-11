@@ -1,0 +1,32 @@
+# 全量回归（server）— 2026-10-11T23:15:20Z @ HEAD 893d418
+$ cd server && GOWORK=off go build ./... && GOWORK=off go test ./... -count=1
+?   	github.com/bianjiefilm/leads-engine/server/cmd/leads-server	[no test files]
+ok  	github.com/bianjiefilm/leads-engine/server/internal/appregistry	0.703s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/authz	1.365s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/campaignmotion	2.056s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/channelix	2.716s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/config	3.355s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/crafthandoff	4.007s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/crmtenant	4.675s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/db	5.692s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/handoffsender	6.432s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/httpapi	22.370s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/identity	6.966s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/intentgrade	7.026s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/lightcopy	7.018s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/matrixdraftclient	7.113s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/matrixhandoff	7.028s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/notifyingest	7.023s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/outbound	7.103s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/platform	6.707s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/platformtask	6.667s
+?   	github.com/bianjiefilm/leads-engine/server/internal/provision	[no test files]
+ok  	github.com/bianjiefilm/leads-engine/server/internal/reception	6.112s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/redact	6.159s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/roi	5.947s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/sopreach	5.808s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/store	8.712s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/subscription	5.907s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/tenantmap	6.211s
+ok  	github.com/bianjiefilm/leads-engine/server/internal/workbench	5.962s
+exit=0

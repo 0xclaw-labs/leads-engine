@@ -1,0 +1,9 @@
+# 全量回归（web）— 2026-10-11T23:15:52Z
+$ cd web && ./node_modules/.bin/vitest run
+
+ Test Files  42 passed (42)
+      Tests  278 passed (278)
+   Start at  07:15:53
+   Duration  1.99s (transform 1.15s, setup 0ms, collect 5.24s, tests 385ms, environment 9ms, prepare 2.57s)
+
+exit=0

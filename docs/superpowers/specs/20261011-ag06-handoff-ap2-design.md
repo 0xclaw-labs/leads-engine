@@ -83,3 +83,24 @@
 ## 5. 纪律
 
 每工作项一 commit；先红后绿；`GOWORK=off`；凭据/令牌只入 scratchpad（chmod600）不入仓不入日志；全量回归逐字记录；证据包 `docs/audits/hui-2391+hui-2747/ap-20261011/`。
+
+## 6. 接手记录（2026-10-12，接任实施者）
+
+前任 I8 于切片 2 TDD 中途静默中断（RED 测试已写全，handler 只挂了路由，两个
+handler 函数缺失，含一处行合并损坏）。接任者续完并交付全部剩余工作项：
+
+- 切片 2（WI-D）续完：0cb3159。校验修正：asset_source_ref 采用 path 形正则
+  （含 /），与测试声明值一致。
+- 切片 4（WI-C）：golden vectors 用真实 sdk v0.4.0（tag 6065fba6，git archive
+  只读提取）生成并钉死；Prepare 签名增会话租户（owner 归属不可来自请求体——
+  设计 §3 WI-C owner.tenant_id=会话租户 的实现决定）；不出链 HTTP 端点保持。
+- 切片 3（WI-A）：env 门 MATRIX_DRAFT_LIVE_BIN（自包含 spawn）/
+  MATRIX_DRAFT_LIVE_URL（外部预置 grant 表）；固定租户 tnt_live_a 直插（随机
+  租户无法在服务启动前写 grant 文件的工程解）；真实服务 hash 冲突代码实测为
+  hash_conflict（设计预估 idempotency_conflict 的偏差如实记录，两者皆 409）。
+- 切片 5（WI-E）：return_path（/campaigns/<id>）作为服务端事实回显，回原位
+  链接指向真实页面路由 /leads/<id>（web 无 /campaigns 路由——词汇缝隙的诚实
+  处理：事实归事实、导航归导航）。
+- 切片 6（R17d）：go-gate.yml 落地。
+- 全量回归 server 27 包 / web 278 测试全绿；证据包
+  docs/audits/hui-2391+hui-2747/ap-20261011/README.md。
