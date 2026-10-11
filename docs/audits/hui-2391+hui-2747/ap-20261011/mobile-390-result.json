@@ -1,0 +1,13 @@
+{
+  "viewport": "390x844",
+  "steps": {
+    "opened": "http://127.0.0.1:29330/leads/lead_535e9775bbf25ebeaa4a97623e1f807f",
+    "draftID": "md_1c7eaba3fd7aef4d",
+    "rechecked": true,
+    "unknownsAreDash": true,
+    "publishFlagFalse": true,
+    "chargeFlagFalse": true,
+    "backAt": "http://127.0.0.1:29330/leads/lead_535e9775bbf25ebeaa4a97623e1f807f",
+    "ms": 1714
+  }
+}
