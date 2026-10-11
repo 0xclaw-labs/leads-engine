@@ -25,7 +25,8 @@ try {
   await shot("02-detail-unassigned");
   const block = page.locator('[data-assign-owner="true"]');
   await block.getByRole("combobox").or(block.locator("button")).first().click(); clicks++;
-  await page.getByRole("option", { name: /店主甲/ }).first().click(); selects++;
+  // 租户 B 的 owner 显示名不同（店主乙）；MEMBER_MATCH 让同一脚本覆盖两个租户。
+  await page.getByRole("option", { name: new RegExp(process.env.MEMBER_MATCH || "店主甲") }).first().click(); selects++;
   await shot("03-detail-member-picked");
   await block.getByRole("button", { name: "分配负责人" }).click(); clicks++;
   await page.getByText("已分配负责人").first().waitFor({ timeout: 60000 });

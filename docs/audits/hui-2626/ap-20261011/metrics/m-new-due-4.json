@@ -1,0 +1,18 @@
+{
+  "version": "new",
+  "task": "due",
+  "round": 4,
+  "lead": "lead_1e8cc0a874eb347d7200c28ebc757116",
+  "visitor": "度临4",
+  "steps": 2,
+  "inputs": 2,
+  "active_ms": 94,
+  "wait_ms": 1145,
+  "total_ms": 1239,
+  "missteps": [],
+  "completed": true,
+  "recovery": "not_injected",
+  "noteKeptAfterFault": null,
+  "leftSurface": true,
+  "submit_status": 201
+}

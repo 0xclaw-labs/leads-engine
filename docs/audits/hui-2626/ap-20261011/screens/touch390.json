@@ -1,0 +1,35 @@
+[
+  {
+    "step": "touch_targets_390",
+    "measured": [
+      {
+        "name": "assign_trigger",
+        "width": 324,
+        "height": 48
+      },
+      {
+        "name": "assign_button",
+        "width": 324,
+        "height": 44
+      },
+      {
+        "name": "record_textarea",
+        "width": 324,
+        "height": 68
+      },
+      {
+        "name": "next_input",
+        "width": 324,
+        "height": 47
+      },
+      {
+        "name": "followup_button",
+        "width": 324,
+        "height": 44
+      }
+    ],
+    "ge44": 5,
+    "ge48": 2,
+    "total": 5
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "step": "tab_reaches_trigger",
+    "reached": true,
+    "tabs": 14,
+    "focus": "BUTTON:combobox:labelled:选择成员"
+  },
+  {
+    "step": "enter_opens_popup",
+    "popupVisible": true
+  },
+  {
+    "step": "esc_closes_and_focus_returns",
+    "popupGone": true,
+    "focus": "BUTTON:combobox:labelled:选择成员"
+  },
+  {
+    "step": "keyboard_select",
+    "triggerText": "店主甲（店主）"
+  },
+  {
+    "step": "tab_reaches_assign_button",
+    "btnReached": true,
+    "btnTabs": 1,
+    "focus": "BUTTON:::分配负责人"
+  },
+  {
+    "step": "keyboard_submit_assigned",
+    "statusText": "已分配负责人",
+    "statusRole": "status"
+  }
+]
