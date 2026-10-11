@@ -7,7 +7,7 @@
 本轮只交付获客侧（leads-engine）能在本仓内闭合的切片，不跨到 AG10（public-ai matrixdraft）、AG09（Motion 工程）、AG01（公共注册/SSO/资产）的实现。
 
 - HUI-2391 切片 A：源端 HTTP 客户端对接 AG10 持久草稿 API；源端持久记录草稿引用（draft_id、状态、published/charged 恒 false、plan/item/external 为 null）；BFF 路由 `POST/GET /api/v1/campaigns/{id}/matrix-drafts`；受 `FEATURE_MATRIX_HANDOFF` 控制，默认 off。
-- HUI-2747 切片 A：把 `campaignmotion.Prepare` 的 nil 接收端改为可观测的计数端口；`model_calls` 由端口真实计数而非硬编码；端口被调用即失败关闭。
+- HUI-2747 切片 A：把 `campaignmotion.Prepare` 的 nil 接收端改为可观测的计数端口；端口被调用即失败关闭（AssertZero 门禁保存路径）；`model_calls` 视图当前为常量 0（硬编码），E3 接线后改取端口计数。
 
 ## 不做（留给后续）
 
@@ -26,7 +26,7 @@
 7. **错误映射**：AG10 `grant_unknown|grant_expired|grant_revoked|license_expired` → 403 原码透传；`wrong_type|old_version|hash_conflict|idempotency_conflict` → 409；`bad_request` → 422；`store_failed|grant_lookup_failed` 与传输失败 → 503 `matrix_unavailable`（可重试，不写本地行）。Leads 主链路不受影响。
 8. **未知指标/计划/条目一律 null。** AG10 当前 Draft 不返回 matrix plan/item/external post，本地字段保持 null，不写 0，不写成已发布。
 9. **FEATURE_MATRIX_HANDOFF 默认 off**，关闭时路由不挂载（404），与 `FEATURE_CAMPAIGN_MOTION` 同模式。开启但 `MATRIX_DRAFT_BASE_URL` 缺失 → 503 `config_gate_matrix`，失败关闭。
-10. **2747 的零调用观测**：`Prepare` 接收一个计数端口。端口的 `WriteCreativeProject` 若被调用即返回错误并计数；`model_calls` 与 `creative_project_writes` 取自端口计数（期望为 0）。不再用 nil 端口或硬编码常量证明零调用。
+10. **2747 的零调用观测**：`Prepare` 接收一个计数端口。端口的 `WriteCreativeProject` 若被调用即返回错误并计数；`creative_project_writes` 取自端口计数、`model_calls` 视图当前硬编码 0（E3 接线后改取端口计数），期望均为 0。不再用 nil 端口证明零调用。
 
 ## 实施偏差（如实记录）
 

@@ -5,7 +5,7 @@
 //   - 只建 AG10 文案草稿（source_app=leads, content_type=copy）。图片与视频不走此路由。
 //   - return_target 由服务端生成，客户端不能指定路径。
 //   - tenant 取自会话成员，不取自请求体。
-//   - 本地先查幂等键；命中即返回既有行，不再调 AG10。
+//   - 幂等不本地短路：每次（含重放）都先经 AG10 CreateDraft 裁决再落本地行——首次之后撤权/授权过期同样在此拒绝。
 //   - AG10 拒绝、不可达、存储失败都不写本地行。
 //   - 草稿 ≠ 发布 ≠ 扣费 ≠ 触达。published、charged 恒为 false；plan、item、外发 id 未知时为 null。
 package httpapi
