@@ -26,6 +26,7 @@ import (
 	"github.com/bianjiefilm/leads-engine/server/internal/db"
 	"github.com/bianjiefilm/leads-engine/server/internal/handoffsender"
 	"github.com/bianjiefilm/leads-engine/server/internal/identity"
+	"github.com/bianjiefilm/leads-engine/server/internal/matrixdraftclient"
 	"github.com/bianjiefilm/leads-engine/server/internal/platformtask"
 	"github.com/bianjiefilm/leads-engine/server/internal/reception"
 	"github.com/bianjiefilm/leads-engine/server/internal/redact"
@@ -47,12 +48,14 @@ type IntentModelReceipt struct {
 
 // Server is the API server.
 type Server struct {
-	Cfg     config.Config
-	St      *store.Store
-	ID      *identity.Client
-	Eco     *handoffsender.Service
-	Log     *log.Logger
-	closeDB func()
+	Cfg config.Config
+	St  *store.Store
+	ID  *identity.Client
+	Eco *handoffsender.Service
+	// MatrixDraft is the AG10 draft client (HUI-2391). Nil when the feature or URL is off.
+	MatrixDraft *matrixdraftclient.Client
+	Log         *log.Logger
+	closeDB     func()
 
 	// FormRatePerMinute / FormResubmitWindow tune the public form surface
 	// (HUI-1679); zero selects the production defaults. Tests may inject.
@@ -90,6 +93,7 @@ func New(cfg config.Config, database *sql.DB, idc *identity.Client, logger *log.
 		logger = log.Default()
 	}
 	s := &Server{Cfg: cfg, St: store.New(database), ID: idc, Log: logger}
+	s.MatrixDraft = newMatrixDraftClient(cfg)
 	// The eco handoff sender is wired ONLY from deployment config + the
 	// embedded app registry (URL/token/app ids never come from requests).
 	// A broken embedded manifest is a build defect: log it and leave Eco
@@ -399,6 +403,7 @@ func (s *Server) Handler() http.Handler {
 	s.mountLightCopy(mux)
 	// HUI-2747 活动动效交出。默认 off。不调用模型，不生成成片，不写创作工程。
 	s.mountCampaignMotion(mux)
+	s.mountMatrixDraft(mux)
 	// HUI-1684 意向分级。默认 off 时整组不注册。
 	s.mountIntentGrade(mux)
 

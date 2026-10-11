@@ -106,6 +106,12 @@ const (
 	// (HUI-2747). Default off: routes are not registered. On still does not
 	// call a model, render a piece, or write a creative project.
 	EnvFeatureCampaignMotion = "FEATURE_CAMPAIGN_MOTION"
+	// EnvFeatureMatrixHandoff gates the leads-side matrix draft handoff (HUI-2391).
+	// Default off: routes are not registered. On still needs EnvMatrixDraftBaseURL.
+	// It never publishes, charges, schedules, or contacts a viewer.
+	EnvFeatureMatrixHandoff = "FEATURE_MATRIX_HANDOFF"
+	// EnvMatrixDraftBaseURL is the AG10 persistent draft API base URL.
+	EnvMatrixDraftBaseURL = "MATRIX_DRAFT_BASE_URL"
 	// EnvReceptionVisitorPepper HMACs anonymous visitor keys. It is never a
 	// billing secret and never a long-lived presentation token.
 	EnvReceptionVisitorPepper = "RECEPTION_VISITOR_PEPPER"
@@ -226,6 +232,10 @@ type Config struct {
 	// FeatureCampaignMotion mounts the HUI-2747 leads-side handoff.
 	// Default off. This process does not render or send a finished piece.
 	FeatureCampaignMotion bool
+	// FeatureMatrixHandoff mounts the HUI-2391 draft routes. Default off.
+	FeatureMatrixHandoff bool
+	// MatrixDraftBaseURL is the AG10 draft API. Empty fails the routes closed.
+	MatrixDraftBaseURL string
 	// VisitorPepper HMACs anonymous reception visitor keys.
 	VisitorPepper string
 	// TaskBaseURL, TaskToken, and TaskAccountID are optional. Reception calls
@@ -334,6 +344,8 @@ func fromEnv(get func(string) string) Config {
 		FeatureLightCopy:           isTruthy(get(EnvFeatureLightCopy)),
 		FeatureOutbound:            isTruthy(get(EnvFeatureOutbound)),
 		FeatureCampaignMotion:      isTruthy(get(EnvFeatureCampaignMotion)),
+		FeatureMatrixHandoff:       isTruthy(get(EnvFeatureMatrixHandoff)),
+		MatrixDraftBaseURL:         strings.TrimSpace(get(EnvMatrixDraftBaseURL)),
 		VisitorPepper:              get(EnvReceptionVisitorPepper),
 		TaskBaseURL:                get("PLATFORM_TASK_BASE_URL"),
 		TaskToken:                  get("PLATFORM_TASK_TOKEN"),
@@ -411,6 +423,7 @@ func (c Config) Describe() string {
 		{"light_copy", c.FeatureLightCopy},
 		{"outbound_call", c.FeatureOutbound},
 		{"campaign_motion", c.FeatureCampaignMotion},
+		{"matrix_handoff", c.FeatureMatrixHandoff},
 	} {
 		v := "off"
 		if f.on {
