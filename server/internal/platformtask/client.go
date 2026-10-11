@@ -96,9 +96,12 @@ func (c *Client) Phrase(ctx context.Context, in PhraseInput) PhraseResult {
 	payload := phraseBody{
 		AppID: c.AppID, AccountID: c.AccountID, IdempotencyKey: in.IdempotencyKey,
 		Capability: phraseCapability,
+		// R15b text source provider contract: params whitelist is
+		// prompt/messages — a `body` key would be dropped upstream while the
+		// hold stays, so the grounded answer must ride under `prompt`.
 		Params: map[string]any{
 			"language":     in.Language,
-			"body":         in.Body,
+			"prompt":       in.Body,
 			"citation_ids": ids,
 		},
 	}
@@ -227,7 +230,9 @@ func sleep(ctx context.Context, d time.Duration) error {
 }
 
 func (c *Client) post(ctx context.Context, capability string, raw []byte) (taskSummary, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/internal/v1/tasks/"+capability, bytes.NewReader(raw))
+	// The capability is a single path segment; keep separators and other
+	// special characters escaped (same hardening as taskID in get()).
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/internal/v1/tasks/"+url.PathEscape(capability), bytes.NewReader(raw))
 	if err != nil {
 		return taskSummary{}, err
 	}
