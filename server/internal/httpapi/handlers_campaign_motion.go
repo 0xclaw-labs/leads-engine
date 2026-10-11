@@ -56,10 +56,16 @@ func (s *Server) handleCampaignMotionPost(w http.ResponseWriter, r *http.Request
 		fail(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
-	prepared, err := campaignmotion.Prepare(id, body, nil)
+	// The creative-project port is observed, not nil: zero writes is a count.
+	port := &campaignmotion.CountingWriter{}
+	prepared, err := campaignmotion.Prepare(id, body, port)
 	if err != nil {
 		code, message := motionError(err)
 		fail(w, http.StatusBadRequest, code, message)
+		return
+	}
+	if err := port.AssertZero(); err != nil {
+		fail(w, http.StatusInternalServerError, "internal", "handoff save failed")
 		return
 	}
 	local, err := json.Marshal(prepared.Local)
