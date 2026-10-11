@@ -5,10 +5,12 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { RecordFrame, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { DateTimeField } from "@/components/workbench/dateTimeField";
+import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
-import { postJson } from "@/lib/fetchJson";
+import { patchJson, postJson } from "@/lib/fetchJson";
+import { assignBody, assignableMembers, needsOwner, type MemberOption, type MemberRow } from "@/lib/leadAssign";
 import {
   NARROW_ACTIONS,
   allowedContactText,
@@ -68,6 +70,11 @@ export default function LeadDeskPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [reload, setReload] = useState(0);
+  // 分配块：只有待分配线索才取成员；读取失败（非 owner）则不展示，服务端仍是权限真源。
+  const [members, setMembers] = useState<MemberOption[] | null>(null);
+  const [pick, setPick] = useState("");
+  const [assignMsg, setAssignMsg] = useState("");
+  const [assignBusy, setAssignBusy] = useState(false);
 
   useEffect(() => {
     setBody(null);
@@ -103,6 +110,54 @@ export default function LeadDeskPage() {
   const width = useShellWidth();
   const visible = loadedFor === scope.tenant ? body : null;
   const channel = visible?.next?.kind === "channel_follow_up";
+  const assignOpen = Boolean(visible && needsOwner(visible.owner_label));
+
+  useEffect(() => {
+    setAssignMsg("");
+  }, [id]);
+
+  useEffect(() => {
+    setMembers(null);
+    setPick("");
+    if (!assignOpen || !scope.tenant) return;
+    const tenant = scope.tenant;
+    let cancelled = false;
+    fetch("/api/admin/members", { headers: listTenantHeader(tenant) ?? {} })
+      .then(async (res) => {
+        if (cancelled || !res.ok) return;
+        const payload = (await res.json()) as { items?: MemberRow[] };
+        if (!cancelled) setMembers(assignableMembers(payload.items ?? []));
+      })
+      .catch(() => {
+        if (!cancelled) setMembers(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assignOpen, scope.epoch, scope.tenant, id]);
+
+  async function assign() {
+    if (!scope.tenant || !pick) return;
+    setAssignBusy(true);
+    setAssignMsg("");
+    try {
+      const out = await patchJson(
+        `/api/leads/${id}`,
+        { "content-type": "application/json", ...(listTenantHeader(scope.tenant) ?? {}) },
+        assignBody(pick),
+      );
+      if (!out.ok) {
+        setAssignMsg(failureText(out.body, out.status));
+        return;
+      }
+      setAssignMsg("已分配负责人");
+      setReload((n) => n + 1);
+    } catch (e) {
+      setAssignMsg(productError((e as Error).message));
+    } finally {
+      setAssignBusy(false);
+    }
+  }
 
   async function submit(channelMode: boolean) {
     if (!scope.tenant) return;
@@ -188,6 +243,29 @@ export default function LeadDeskPage() {
           >
             <p data-joint-chain="incomplete">{jointChainLine(visible.joint_chain)}</p>
           </RecordFrame>
+          {assignOpen && members && members.length > 0 ? (
+            <div className="card stack-form" data-assign-owner="true">
+              <h2>分配负责人</h2>
+              <p className="muted">这条线索还没有负责人。分配后才能记跟进、安排下一步。</p>
+              <RendererSelect
+                label="负责人"
+                value={pick}
+                onValueChange={setPick}
+                choices={[{ value: "", label: "选择成员", disabled: true }, ...members.map((m) => ({ value: m.id, label: m.label }))]}
+                disabled={assignBusy}
+              />
+              <div className="queue-actions">
+                <Button variant="secondary" type="button" size="sm" disabled={assignBusy || !pick} onClick={() => void assign()}>
+                  分配负责人
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {assignMsg ? (
+            <p className="muted" role="status" data-assign-result="true">
+              {assignMsg}
+            </p>
+          ) : null}
           <div className="card">
             <h2>时间线</h2>
             {(visible.events ?? []).length === 0 ? (
