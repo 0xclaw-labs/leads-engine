@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -44,6 +45,7 @@ var allowedTop = map[string]bool{
 	"channels":              true,
 	"budget_attribution_id": true,
 	"motion":                true,
+	"variant_binding":       true,
 }
 
 var sensitiveKey = map[string]bool{
@@ -77,6 +79,7 @@ var exportKey = map[string]bool{
 	"key": true, "value": true, "authorized_asset_ids": true, "cta": true,
 	"channels": true, "budget_attribution_id": true, "variants": true, "channel": true,
 	"motion": true, "project_id": true, "revision_id": true, "campaign_id": true, "digest": true,
+	"variant_id": true, "origin_context_ref": true,
 }
 
 // ApprovedFact is one confirmed brand or product fact.
@@ -85,9 +88,15 @@ type ApprovedFact struct {
 	Value string `json:"value"`
 }
 
-// Variant records a channel name. It is not a generated piece.
+// Variant records a channel name plus, when a variant binding was supplied,
+// the per-channel variant facts: a motionref-shaped variant id, the sealed
+// digest, and the return anchor back to this campaign. Ids are facts about
+// the handoff; they are not a generated piece.
 type Variant struct {
-	Channel string `json:"channel"`
+	Channel          string `json:"channel"`
+	VariantID        string `json:"variant_id,omitempty"`
+	Digest           string `json:"digest,omitempty"`
+	OriginContextRef string `json:"origin_context_ref,omitempty"`
 }
 
 // MotionRef is the only Motion citation this handoff may carry.
@@ -140,11 +149,16 @@ type factCandidate struct {
 	value string
 }
 
-// Prepare builds the export from the raw request JSON.
-// writer may be non-nil; this slice still does not call it and does not call a model.
-// Channel names are recorded once each. The call count does not follow the channel count.
-func Prepare(campaignID string, raw []byte, writer CreativeProjectWriter) (Result, error) {
+// Prepare builds the export from the raw request JSON for the caller's session
+// tenant. writer may be non-nil; this slice still does not call it and does not
+// call a model. Channel names are recorded once each. The call count does not
+// follow the channel count.
+func Prepare(tenantID, campaignID string, raw []byte, writer CreativeProjectWriter) (Result, error) {
 	_ = writer
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" || !tokenRe.MatchString(tenantID) {
+		return Result{}, ErrInvalid
+	}
 	campaignID = strings.TrimSpace(campaignID)
 	if !tokenRe.MatchString(campaignID) {
 		return Result{}, ErrInvalid
@@ -196,12 +210,17 @@ func Prepare(campaignID string, raw []byte, writer CreativeProjectWriter) (Resul
 	if err != nil {
 		return Result{}, err
 	}
+	binding, err := parseVariantBinding(obj["variant_binding"], secrets)
+	if err != nil {
+		return Result{}, err
+	}
 
+	authorized := scrubAssets(assets, secrets)
 	doc := Document{
 		CampaignGoal:        goal,
 		TargetAudience:      audience,
 		ApprovedFacts:       scrubFacts(facts, secrets),
-		AuthorizedAssetIDs:  scrubAssets(assets, secrets),
+		AuthorizedAssetIDs:  authorized,
 		CTA:                 cta,
 		Channels:            channels,
 		BudgetAttributionID: budget,
@@ -213,6 +232,37 @@ func Prepare(campaignID string, raw []byte, writer CreativeProjectWriter) (Resul
 	}
 	if doc.AuthorizedAssetIDs == nil {
 		doc.AuthorizedAssetIDs = []string{}
+	}
+	if binding != nil {
+		// A binding turns each channel into a motionref-shaped variant claim
+		// owned by the session tenant. Missing receiver, foreign-tenant runs,
+		// and expired bindings are refused; the digest self-check refuses an
+		// unbound shape. The tenant is the caller's session tenant, never a
+		// request field.
+		outs, err := BuildVariants(VariantSpec{
+			CampaignID:      campaignID,
+			TenantID:        tenantID,
+			OwnerAccountID:  binding.ownerAccountID,
+			OwnerTenantID:   binding.ownerTenantID,
+			ProjectID:       motion.ProjectID,
+			RevisionID:      motion.RevisionID,
+			Channels:        channels,
+			AuthorizedAsset: doc.AuthorizedAssetIDs,
+			ExpiresAt:       binding.expiresAt,
+			Now:             time.Now(),
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		doc.Variants = doc.Variants[:0]
+		for _, o := range outs {
+			doc.Variants = append(doc.Variants, Variant{
+				Channel:          o.Channel,
+				VariantID:        o.VariantID,
+				Digest:           o.Digest,
+				OriginContextRef: o.OriginContextRef,
+			})
+		}
 	}
 	export, err := json.Marshal(doc)
 	if err != nil {
@@ -231,6 +281,72 @@ func Prepare(campaignID string, raw []byte, writer CreativeProjectWriter) (Resul
 		PieceSent:             false,
 		Notice:                Notice,
 	}, nil
+}
+
+// variantBinding is the optional per-campaign motion receiver declaration. The
+// tenant is the session tenant; owner_tenant_id may only repeat it.
+type variantBinding struct {
+	ownerAccountID string
+	ownerTenantID  string
+	expiresAt      *time.Time
+}
+
+// parseVariantBinding reads the optional binding object. Unknown keys fail;
+// missing fields stay empty so BuildVariants can refuse them by name.
+func parseVariantBinding(raw json.RawMessage, secrets []string) (*variantBinding, error) {
+	if isNull(raw) || len(bytes.TrimSpace(raw)) == 0 {
+		return nil, nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+		return nil, ErrInvalid
+	}
+	for key := range obj {
+		switch key {
+		case "owner_account_id", "owner_tenant_id", "expires_at":
+		default:
+			return nil, ErrInvalid
+		}
+	}
+	out := &variantBinding{}
+	if raw, ok := obj["owner_account_id"]; ok && !isNull(raw) {
+		s, err := bindingString(raw, secrets)
+		if err != nil {
+			return nil, err
+		}
+		out.ownerAccountID = s
+	}
+	if raw, ok := obj["owner_tenant_id"]; ok && !isNull(raw) {
+		s, err := bindingString(raw, secrets)
+		if err != nil {
+			return nil, err
+		}
+		out.ownerTenantID = s
+	}
+	if raw, ok := obj["expires_at"]; ok && !isNull(raw) {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, ErrInvalid
+		}
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(s))
+		if err != nil {
+			return nil, ErrInvalid
+		}
+		out.expiresAt = &t
+	}
+	return out, nil
+}
+
+func bindingString(raw json.RawMessage, secrets []string) (string, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", ErrInvalid
+	}
+	s = scrub(strings.TrimSpace(s), secrets)
+	if s != "" && !tokenRe.MatchString(s) {
+		return "", ErrInvalid
+	}
+	return s, nil
 }
 
 func variantsFrom(channels []string) []Variant {

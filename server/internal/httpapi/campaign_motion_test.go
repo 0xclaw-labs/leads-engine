@@ -198,3 +198,93 @@ func TestCampaignMotionRefStaysOnThePathCampaign(t *testing.T) {
 		t.Fatalf("rejected ref was stored, rows=%d", rows)
 	}
 }
+
+func seedMotionLead(t *testing.T, h *harness, tenant string) string {
+	t.Helper()
+	intake := h.intake(sessionOwnerA, tenant, `{
+		"source_app":"touch","source_ns":"landing","event_id":"evt-variant-1",
+		"contact":{"name":"变体联系人","phone":"13900004444"},
+		"business_category":"merchant_customer","source_type":"touch_campaign",
+		"source":{"source_app":"touch","source_ref":"camp-variant","auth_scope_snapshot":"profile-variant"},
+		"consent":{"source_submission_ref":"sub-variant","source_channel":"landing_page","notice_version":"notice-v1","marketing_allowed":false}
+	}`, 201)
+	id, _ := intake["lead_id"].(string)
+	if id == "" {
+		t.Fatalf("intake: %v", intake)
+	}
+	return id
+}
+
+func motionBindingBody(leadID, binding string) string {
+	return `{
+		"campaign_goal":"变体走查目标",
+		"channels":["抖音信息流","快手落地页"],
+		"authorized_asset_ids":["asset_ok_1"],
+		"budget_attribution_id":"budget_variant_1",
+		"motion":{"project_id":"prj_motion_1","revision_id":"rev_motion_1","campaign_id":"` + leadID + `","digest":"sha256:` + strings.Repeat("cd", 32) + `"}
+		` + binding + `
+	}`
+}
+
+// A binding turns each channel into a motionref-shaped variant claim inside
+// the export; counts stay zero and no link is issued over HTTP.
+func TestCampaignMotionVariantBindingShapesPerChannel(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureCampaignMotion: true})
+	tenant, _, _ := h.seed()
+	leadID := seedMotionLead(t, h, tenant)
+	binding := `,"variant_binding":{"owner_account_id":"acct_motion_1","expires_at":"2027-01-01T00:00:00Z"}`
+	saved := h.mustDo("POST", "/api/v1/campaigns/"+leadID+"/motion-handoff", sessionOwnerA, tenant, motionBindingBody(leadID, binding), 200)
+	export, _ := saved["export"].(map[string]any)
+	variants, _ := export["variants"].([]any)
+	if len(variants) != 2 {
+		t.Fatalf("variants = %v", variants)
+	}
+	for _, v := range variants {
+		row, _ := v.(map[string]any)
+		id, _ := row["variant_id"].(string)
+		digest, _ := row["digest"].(string)
+		ref, _ := row["origin_context_ref"].(string)
+		if !strings.HasPrefix(id, "var_") || !strings.HasPrefix(digest, "sha256:") ||
+			!strings.HasPrefix(ref, "leads/campaigns/"+leadID+"/motion-handoffs#") {
+			t.Fatalf("variant facts incomplete: %v", row)
+		}
+	}
+	if saved["model_calls"].(float64) != 0 || saved["creative_project_writes"].(float64) != 0 {
+		t.Fatalf("binding produced calls: %v", saved)
+	}
+	raw := jsonText(export)
+	if strings.Contains(raw, "https://") || strings.Contains(raw, "motionRef=") {
+		t.Fatalf("export carries a signed link: %s", raw)
+	}
+}
+
+// The binding refusals surface with their own codes and write nothing.
+func TestCampaignMotionVariantBindingRejections(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureCampaignMotion: true})
+	tenantA, tenantB, _ := h.seed()
+	leadID := seedMotionLead(t, h, tenantA)
+	path := "/api/v1/campaigns/" + leadID + "/motion-handoff"
+
+	status, out, _ := h.do("POST", path, sessionOwnerA, tenantA, motionBindingBody(leadID, `,"variant_binding":{"owner_tenant_id":"tnt_other","owner_account_id":"acct_motion_1"}`))
+	if status != 403 || stringOf(errCode(out)) != "foreign_tenant" {
+		t.Fatalf("foreign = %d %v, want 403 foreign_tenant", status, out)
+	}
+	status, out, _ = h.do("POST", path, sessionOwnerA, tenantA, motionBindingBody(leadID, `,"variant_binding":{"owner_account_id":"acct_motion_1","expires_at":"2020-01-01T00:00:00Z"}`))
+	if status != 422 || stringOf(errCode(out)) != "variant_expired" {
+		t.Fatalf("expired = %d %v, want 422 variant_expired", status, out)
+	}
+	status, out, _ = h.do("POST", path, sessionOwnerA, tenantA, motionBindingBody(leadID, `,"variant_binding":{"expires_at":"2027-01-01T00:00:00Z"}`))
+	if status != 422 || stringOf(errCode(out)) != "motion_receiver" {
+		t.Fatalf("no receiver = %d %v, want 422 motion_receiver", status, out)
+	}
+
+	got := h.mustDo("GET", path, sessionOwnerA, tenantA, "", 200)
+	if _, has := got["export"]; has && got["export"] != nil {
+		t.Fatalf("a rejected binding still saved an export: %v", got)
+	}
+	// Tenant B still cannot touch the campaign.
+	status, _, _ = h.do("POST", path, sessionOwnerB, tenantB, motionBindingBody(leadID, `,"variant_binding":{"owner_account_id":"acct_motion_1"}`))
+	if status != 404 {
+		t.Fatalf("tenant b = %d, want 404", status)
+	}
+}

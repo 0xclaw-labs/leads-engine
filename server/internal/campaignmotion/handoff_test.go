@@ -72,7 +72,7 @@ func (panicWriter) WriteCreativeProject(string, string, []byte) error {
 
 func TestExportDropsPrivacyAndKeepsOnlyAllowedFields(t *testing.T) {
 	const campaignID = "led_campaign_1"
-	got, err := Prepare(campaignID, handoffRaw(t, campaignID, validDigest(), ""), panicWriter{})
+	got, err := Prepare("tnt_motion", campaignID, handoffRaw(t, campaignID, validDigest(), ""), panicWriter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestChannelsDoNotScaleModelCalls(t *testing.T) {
 		"budget_attribution_id":"budget_spring_1",
 		"motion":{"project_id":"prj_motion_1","revision_id":"rev_motion_1","campaign_id":"led_campaign_1","digest":"` + validDigest() + `"}
 	}`)
-	got, err := Prepare("led_campaign_1", raw, panicWriter{})
+	got, err := Prepare("tnt_motion", "led_campaign_1", raw, panicWriter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestMotionDigestAndShape(t *testing.T) {
 			"motion":` + motion + `
 		}`)
 	}
-	if _, err := Prepare("led_campaign_1", base(validDigest(), ""), nil); err != nil {
+	if _, err := Prepare("tnt_motion", "led_campaign_1", base(validDigest(), ""), nil); err != nil {
 		t.Fatal(err)
 	}
 	bad := []string{
@@ -185,12 +185,12 @@ func TestMotionDigestAndShape(t *testing.T) {
 		"sha256:" + strings.Repeat("a", 32) + "GG" + strings.Repeat("a", 30),
 	}
 	for _, digest := range bad {
-		_, err := Prepare("led_campaign_1", base(digest, ""), nil)
+		_, err := Prepare("tnt_motion", "led_campaign_1", base(digest, ""), nil)
 		if err != ErrDigest {
 			t.Fatalf("digest %s err=%v", digest, err)
 		}
 	}
-	_, err := Prepare("led_campaign_1", base(validDigest(), `"timeline":{"ast":"secret-timeline"}`), nil)
+	_, err := Prepare("tnt_motion", "led_campaign_1", base(validDigest(), `"timeline":{"ast":"secret-timeline"}`), nil)
 	if err != ErrMotion {
 		t.Fatalf("extra motion key err=%v", err)
 	}
@@ -200,7 +200,7 @@ func TestMotionDigestAndShape(t *testing.T) {
 		"budget_attribution_id":"budget_spring_1",
 		"motion":{"project_id":"prj_motion_1","revision_id":"rev_motion_1","campaign_id":"led_other","digest":"` + validDigest() + `"}
 	}`)
-	_, err = Prepare("led_campaign_1", mismatch, nil)
+	_, err = Prepare("tnt_motion", "led_campaign_1", mismatch, nil)
 	if err != ErrMotion {
 		t.Fatalf("campaign mismatch err=%v", err)
 	}
@@ -210,7 +210,7 @@ func TestMotionDigestAndShape(t *testing.T) {
 		"budget_attribution_id":"budget_spring_1",
 		"motion":{"project_id":"prj_motion_1","revision_id":"rev_motion_1","digest":"` + validDigest() + `"}
 	}`)
-	got, err := Prepare("led_campaign_1", omitted, nil)
+	got, err := Prepare("tnt_motion", "led_campaign_1", omitted, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestMotionDigestAndShape(t *testing.T) {
 		[]byte(`{"campaign_goal":"空白工程","channels":["抖音"],"budget_attribution_id":"budget_spring_1","motion":{"project_id":"   ","revision_id":"rev_motion_1","digest":"` + validDigest() + `"}}`),
 		[]byte(`{"campaign_goal":"空白版本","channels":["抖音"],"budget_attribution_id":"budget_spring_1","motion":{"project_id":"prj_motion_1","revision_id":"  ","digest":"` + validDigest() + `"}}`),
 	} {
-		if _, err := Prepare("led_campaign_1", raw, nil); err != ErrMotion {
+		if _, err := Prepare("tnt_motion", "led_campaign_1", raw, nil); err != ErrMotion {
 			t.Fatalf("empty motion id err=%v body=%s", err, raw)
 		}
 	}
