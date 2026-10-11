@@ -25,6 +25,7 @@ import {
   type StatusFacts,
 } from "@/lib/workbench";
 import { CampaignMotionPanel } from "@/components/CampaignMotionPanel";
+import { MatrixDraftPanel } from "@/components/MatrixDraftPanel";
 import { LightCopyPanel } from "@/components/LightCopyPanel";
 
 interface TimelineEvent {
@@ -287,6 +288,7 @@ export default function LeadDeskPage() {
           </div>
           {id ? <LightCopyPanel subjectKind="campaign" subjectId={id} /> : null}
           {id ? <CampaignMotionPanel campaignId={id} /> : null}
+          {id ? <MatrixDraftPanel campaignId={id} /> : null}
           <div className="card stack-form">
             {/* HUI-2626 fix2：提交语义收敛到显式按钮（主行动至多一个），控件走 vendored/标准件。 */}
             <h2>跟进</h2>
