@@ -133,6 +133,11 @@ func (s *Store) FindMatrixDraftRefByKey(tenantID, campaignID string, revision in
 	return ref, true, nil
 }
 
+// GetMatrixDraftRefByID returns one row by its primary key, only inside its tenant.
+func (s *Store) GetMatrixDraftRefByID(tenantID, id string) (MatrixDraftRef, error) {
+	return s.getMatrixDraftRefRow(tenantID, id)
+}
+
 // GetMatrixDraftRef returns one row by draft id, only inside its tenant.
 func (s *Store) GetMatrixDraftRef(tenantID, draftID string) (MatrixDraftRef, error) {
 	row := s.DB.QueryRow(`SELECT `+matrixDraftRefColumns+`
@@ -316,4 +321,3 @@ func sourceEventFingerprint(facts MatrixDraftSourceFacts) string {
 	}, "\x1f")))
 	return "fp_" + hex.EncodeToString(sum[:])
 }
-
