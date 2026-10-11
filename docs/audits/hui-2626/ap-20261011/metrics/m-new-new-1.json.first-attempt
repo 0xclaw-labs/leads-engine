@@ -1,0 +1,18 @@
+{
+  "version": "new",
+  "task": "new",
+  "round": 1,
+  "lead": "lead_61df9a0c69520627feb66046aebe93bc",
+  "visitor": "度新1",
+  "steps": 0,
+  "inputs": 0,
+  "active_ms": 0,
+  "wait_ms": 61060,
+  "total_ms": 61060,
+  "missteps": [
+    "ERROR"
+  ],
+  "completed": false,
+  "recovery": "not_injected",
+  "error": "locator.waitFor: Timeout 60000ms exceeded.\nCall log:\n  - waiting for locator('a[href=\"/leads/lead_61df9a0c69520627feb66046aebe93bc\"]').first() to be visible\n"
+}

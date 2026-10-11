@@ -1,0 +1,20 @@
+{
+  "version": "old",
+  "task": "due",
+  "round": 6,
+  "lead": "lead_69417947e67aeac61d8372b187552e43",
+  "visitor": "旧临6",
+  "steps": 3,
+  "inputs": 2,
+  "active_ms": 112,
+  "wait_ms": 1035,
+  "total_ms": 1147,
+  "missteps": [
+    "first_submit_503"
+  ],
+  "completed": true,
+  "recovery": "entry_available_input_kept;retried_ok",
+  "noteKeptAfterFault": true,
+  "leftSurface": true,
+  "submit_status": 503
+}

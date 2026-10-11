@@ -1,0 +1,27 @@
+import { chromium } from "playwright-core";
+import fs from "node:fs";
+const [, , tenant, leadRef, out] = process.argv;
+const steps = [];
+const step = (n, d = {}) => { steps.push({ step: n, ...d }); console.log(JSON.stringify({ step: n, ...d })); };
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+await ctx.addCookies([{ name: "leads_session", value: "tok_owner_walk", domain: "127.0.0.1", path: "/" }]);
+const page = await ctx.newPage();
+await page.addInitScript((t) => { try { localStorage.setItem("leads_tenant_id", t); } catch {} }, tenant);
+let posted = 0;
+await page.route(`**/api/leads/${leadRef}/follow-through`, async (route) => {
+  posted++;
+  await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable", message: "服务暂未响应" }) });
+});
+await page.goto(`http://127.0.0.1:29330/leads/${leadRef}`, { waitUntil: "networkidle", timeout: 240000 });
+const NOTE = "失败保留测试：电话未接通，明天再打";
+await page.getByLabel("记录").fill(NOTE);
+await page.getByLabel("下一次").fill("2026-10-12T10:00");
+await page.getByRole("button", { name: "记跟进", exact: true }).click();
+await page.waitForTimeout(1500);
+const kept = await page.getByLabel("记录").inputValue();
+const body = await page.innerText("body");
+step("save_failed_injected_503", { requests: posted, noteKept: kept === NOTE, recoveryShown: body.includes("服务暂未响应") });
+await page.screenshot({ path: out, fullPage: true });
+await browser.close();
+fs.writeFileSync(out.replace(/\.png$/, ".json"), JSON.stringify(steps, null, 2));

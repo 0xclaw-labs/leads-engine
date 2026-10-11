@@ -153,6 +153,8 @@ type harnessOpts struct {
 	platformTaskBase        string // three PLATFORM_TASK_* keys point here when set
 	featureOutbound         bool   // FEATURE_OUTBOUND_CALL=on (HUI-1687)
 	featureCampaignMotion   bool   // FEATURE_CAMPAIGN_MOTION=on (HUI-2747)
+	featureMatrixHandoff    bool   // FEATURE_MATRIX_HANDOFF=on (HUI-2391)
+	matrixDraftURL          string // MATRIX_DRAFT_BASE_URL (AG10 draft API base, loopback in tests)
 	omitVisitorPepper       bool   // reception routes fail closed without RECEPTION_VISITOR_PEPPER
 	ingestFetchBase         string
 	ingestSecret            string
@@ -221,6 +223,13 @@ func newHarnessOpts(t *testing.T, opts harnessOpts) *harness {
 				return "true"
 			}
 			return ""
+		case "FEATURE_MATRIX_HANDOFF":
+			if opts.featureMatrixHandoff {
+				return "on"
+			}
+			return ""
+		case "MATRIX_DRAFT_BASE_URL":
+			return opts.matrixDraftURL
 		case "ECO_HANDOFF_TARGET_APP":
 			return "orders"
 		case "ECO_HANDOFF_INTAKE_URL":
