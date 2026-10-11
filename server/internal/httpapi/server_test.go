@@ -131,28 +131,29 @@ type harness struct {
 }
 
 type harnessOpts struct {
-	omitIdentityToken       bool // config gate intentionally unsatisfied
-	featureServiceDraft     bool // FEATURE_SERVICE_DRAFT=on (mount point registered)
-	ecoOn                   bool // FEATURE_SERVICE_DRAFT=on + all ECO_HANDOFF_* facts wired to the stub receiver
-	ecoIntakeDead           bool // ecoOn but the intake URL is a dead port (delivery-failure paths)
-	captureLog              bool // capture server log lines for redaction assertions
-	omitDedupPepper         bool // HUI-1683: intake fails closed when the pepper is missing
-	featureLeadsFilter      bool // FEATURE_LEADS_FILTER=on (HUI-1686 无效线索过滤)
-	featureFollowups        bool // FEATURE_FOLLOWUPS=on (HUI-1692 / FEAT-0193 跟进记录)
-	featureLeadsAssign      bool // FEATURE_LEADS_ASSIGN=on (HUI-1685 / FEAT-0186 线索自动分配)
-	featureFunnel           bool // FEATURE_FUNNEL=on (HUI-1694 / FEAT-0195 全漏斗分析)
-	featureChannelAnalytics bool // FEATURE_CHANNEL_ANALYTICS=on (HUI-1695 / FEAT-0196 渠道效果分析)
-	featureContactTags      bool // FEATURE_CONTACT_TAGS=on (HUI-1690 / FEAT-0191 客户画像标签)
-	featureNotifyIngest     bool // FEATURE_NOTIFY_INGEST=on (HUI-1680)
-	featureEnterpriseDir    bool // FEATURE_ENTERPRISE_DIRECTORY=on (HUI-1678)
-	featureReception        bool // FEATURE_RECEPTION=on (HUI-1688)
-	featureIntentGrade      bool // FEATURE_INTENT_GRADE=on (HUI-1684)
-	featureROI              bool // FEATURE_ROI=on (HUI-1696)
-	featureSOP              bool // FEATURE_SOP_REACH=on (HUI-1689)
-	featureLightCopy        bool // FEATURE_LIGHT_COPY=on (HUI-1682)
-	featureOutbound         bool // FEATURE_OUTBOUND_CALL=on (HUI-1687)
-	featureCampaignMotion   bool // FEATURE_CAMPAIGN_MOTION=on (HUI-2747)
-	omitVisitorPepper       bool // reception routes fail closed without RECEPTION_VISITOR_PEPPER
+	omitIdentityToken       bool   // config gate intentionally unsatisfied
+	featureServiceDraft     bool   // FEATURE_SERVICE_DRAFT=on (mount point registered)
+	ecoOn                   bool   // FEATURE_SERVICE_DRAFT=on + all ECO_HANDOFF_* facts wired to the stub receiver
+	ecoIntakeDead           bool   // ecoOn but the intake URL is a dead port (delivery-failure paths)
+	captureLog              bool   // capture server log lines for redaction assertions
+	omitDedupPepper         bool   // HUI-1683: intake fails closed when the pepper is missing
+	featureLeadsFilter      bool   // FEATURE_LEADS_FILTER=on (HUI-1686 无效线索过滤)
+	featureFollowups        bool   // FEATURE_FOLLOWUPS=on (HUI-1692 / FEAT-0193 跟进记录)
+	featureLeadsAssign      bool   // FEATURE_LEADS_ASSIGN=on (HUI-1685 / FEAT-0186 线索自动分配)
+	featureFunnel           bool   // FEATURE_FUNNEL=on (HUI-1694 / FEAT-0195 全漏斗分析)
+	featureChannelAnalytics bool   // FEATURE_CHANNEL_ANALYTICS=on (HUI-1695 / FEAT-0196 渠道效果分析)
+	featureContactTags      bool   // FEATURE_CONTACT_TAGS=on (HUI-1690 / FEAT-0191 客户画像标签)
+	featureNotifyIngest     bool   // FEATURE_NOTIFY_INGEST=on (HUI-1680)
+	featureEnterpriseDir    bool   // FEATURE_ENTERPRISE_DIRECTORY=on (HUI-1678)
+	featureReception        bool   // FEATURE_RECEPTION=on (HUI-1688)
+	featureIntentGrade      bool   // FEATURE_INTENT_GRADE=on (HUI-1684)
+	featureROI              bool   // FEATURE_ROI=on (HUI-1696)
+	featureSOP              bool   // FEATURE_SOP_REACH=on (HUI-1689)
+	featureLightCopy        bool   // FEATURE_LIGHT_COPY=on (HUI-1682)
+	platformTaskBase        string // three PLATFORM_TASK_* keys point here when set
+	featureOutbound         bool   // FEATURE_OUTBOUND_CALL=on (HUI-1687)
+	featureCampaignMotion   bool   // FEATURE_CAMPAIGN_MOTION=on (HUI-2747)
+	omitVisitorPepper       bool   // reception routes fail closed without RECEPTION_VISITOR_PEPPER
 	ingestFetchBase         string
 	ingestSecret            string
 	ingestFetchToken        string
@@ -268,6 +269,23 @@ func newHarnessOpts(t *testing.T, opts harnessOpts) *harness {
 		case "FEATURE_CAMPAIGN_MOTION":
 			if opts.featureCampaignMotion {
 				return "on"
+			}
+			return ""
+		case "PLATFORM_TASK_BASE_URL":
+			return opts.platformTaskBase
+		case "PLATFORM_TASK_TOKEN":
+			if opts.platformTaskBase != "" {
+				return "test-task-token"
+			}
+			return ""
+		case "PLATFORM_TASK_ACCOUNT_ID":
+			if opts.platformTaskBase != "" {
+				return "test-task-account"
+			}
+			return ""
+		case "PLATFORM_TASK_TEXT_CAPABILITY":
+			if opts.platformTaskBase != "" {
+				return "leads.text.standin"
 			}
 			return ""
 		case "RECEPTION_VISITOR_PEPPER":

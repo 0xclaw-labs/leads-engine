@@ -215,3 +215,30 @@ func TestEcoGateScopedAndFailClosed(t *testing.T) {
 		t.Fatalf("eco gate should be satisfied, got %v", problems)
 	}
 }
+
+// HUI-1682: the light-copy text seam rides the platform task keys. The
+// capability and model overrides are optional and default to empty.
+func TestTaskTextCapabilityAndModelFromEnv(t *testing.T) {
+	cfg := Load(func(k string) string {
+		switch k {
+		case "PLATFORM_TASK_BASE_URL":
+			return "http://127.0.0.1:9"
+		case "PLATFORM_TASK_TOKEN":
+			return "tok"
+		case "PLATFORM_TASK_ACCOUNT_ID":
+			return "acct"
+		case "PLATFORM_TASK_TEXT_CAPABILITY":
+			return " leads.text.v2 "
+		case "PLATFORM_TASK_TEXT_MODEL":
+			return "glm-5"
+		}
+		return ""
+	})
+	if cfg.TaskTextCapability != "leads.text.v2" || cfg.TaskTextModel != "glm-5" {
+		t.Fatalf("task text env = %q %q", cfg.TaskTextCapability, cfg.TaskTextModel)
+	}
+	empty := Load(func(string) string { return "" })
+	if empty.TaskTextCapability != "" || empty.TaskTextModel != "" {
+		t.Fatalf("task text env must default empty: %q %q", empty.TaskTextCapability, empty.TaskTextModel)
+	}
+}

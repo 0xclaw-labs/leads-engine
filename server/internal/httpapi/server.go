@@ -72,6 +72,10 @@ type Server struct {
 	ReceptionPhraser interface {
 		Phrase(ctx context.Context, in platformtask.PhraseInput) platformtask.PhraseResult
 	}
+	// LightCopyPhraser produces HUI-1682 in-scene drafts through the same
+	// platform task meter. Nil means generate refuses with model_unavailable
+	// and capability reports model_ready=false.
+	LightCopyPhraser platformtask.TextGenerator
 	// IntentModel is an optional probe. Open leaves it nil. Task credentials
 	// stay on ReceptionPhraser and must not be stored as an intent grade.
 	IntentModel interface {
@@ -119,7 +123,10 @@ func Open(cfg config.Config, logger *log.Logger) (*Server, error) {
 	s := New(cfg, d, idc, logger)
 	s.closeDB = func() { d.Close() }
 	if phraser := platformtask.New(cfg.TaskBaseURL, cfg.TaskToken, cfg.TaskAccountID, cfg.AppID); phraser != nil {
+		phraser.TextCapability = cfg.TaskTextCapability
+		phraser.TextModel = cfg.TaskTextModel
 		s.ReceptionPhraser = phraser
+		s.LightCopyPhraser = phraser
 	}
 	// IntentModel stays nil even when the three task keys are set.
 	return s, nil

@@ -135,8 +135,11 @@ func scanLightDraft(sc interface{ Scan(...any) error }) (LightDraft, error) {
 	return d, nil
 }
 
-// SaveLightDraft upserts the manual text. Flags that would mean sent,
-// published, generated, or charged cannot be stored.
+// SaveLightDraft upserts the draft text. Flags that would mean sent,
+// published, or granted marketing consent cannot be stored. Since the
+// platform task became the live text seam, model provenance (generated +
+// origin=model) and the recorded charge are stored so a real consumption is
+// never silently rewritten into a manual draft.
 func (s *Store) SaveLightDraft(d LightDraft) (LightDraft, error) {
 	if d.ID == "" {
 		d.ID = newID("lcd_")
@@ -146,24 +149,30 @@ func (s *Store) SaveLightDraft(d LightDraft) (LightDraft, error) {
 	}
 	d.UpdatedAt = now()
 	confirmed := 0
+	generated := 0
 	if d.UserConfirmed {
 		confirmed = 1
+	}
+	if d.Generated {
+		generated = 1
 	}
 	_, err := s.DB.Exec(`
 		INSERT INTO light_copy_drafts(
 			id, tenant_id, subject_kind, subject_id, kind, body, origin, content_version,
 			generated, sent, published, marketing_permitted, user_confirmed, live_charge,
 			updated_by, created_at, updated_at)
-		VALUES(?,?,?,?,?,?,?,?,0,0,0,0,?,?,?,?,?)
+		VALUES(?,?,?,?,?,?,?,?,?,0,0,0,?,?,?,?,?)
 		ON CONFLICT(tenant_id, subject_kind, subject_id, kind) DO UPDATE SET
 			body=excluded.body,
 			origin=excluded.origin,
 			content_version=excluded.content_version,
+			generated=excluded.generated,
+			live_charge=excluded.live_charge,
 			user_confirmed=excluded.user_confirmed,
 			updated_by=excluded.updated_by,
 			updated_at=excluded.updated_at`,
 		d.ID, d.TenantID, d.SubjectKind, d.SubjectID, d.Kind, d.Body, d.Origin, d.ContentVersion,
-		confirmed, d.LiveCharge, d.UpdatedBy, d.CreatedAt, d.UpdatedAt)
+		generated, confirmed, d.LiveCharge, d.UpdatedBy, d.CreatedAt, d.UpdatedAt)
 	if err != nil {
 		return LightDraft{}, err
 	}
