@@ -13,7 +13,7 @@ cd /Volumes/MobileHD/Work/派诺生态/_worktrees/20261011-agg/ag06-ai/server &&
 ```
 基线结果（逐字）：26 个含测试包全部 `ok`，2 个无测试包（`cmd/leads-server`、`internal/provision`）。代表性耗时：httpapi 22.966s、store 10.990s、lightcopy 7.261s、platformtask 6.913s、reception 6.772s。
 
-最终回归（HEAD 见 git log，`1bc2b64` 前）：同一命令三连跑，均 `26 ok / 0 FAIL`（/tmp/ag06-full-175219.log 为其中一次完整输出）。无包回退。
+最终回归（HEAD 见 git log，`666e5ec` 前）：同一命令三连跑，均 `26 ok / 0 FAIL`（/tmp/ag06-full-175219.log 为其中一次完整输出）。无包回退。（R-L56 独立复跑绿点）
 
 ## 二、逐工作项结果
 
