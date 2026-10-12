@@ -15,16 +15,20 @@ import (
 )
 
 func (s *Server) mountCampaignMotion(mux *http.ServeMux) {
-	if !s.Cfg.FeatureCampaignMotion {
-		return
-	}
+	// HUI-2626 盲评 P2①：capability 发现始终可达——关闭时 200+enabled:false，
+	// 面板据此隐藏，详情页不再每次都打 404。fail-closed 不变：关闭时交出读写
+	// 路由仍不挂载，一样不可见。
 	mux.Handle("GET /api/v1/campaign-motion/capability", s.requireSession(s.handleCampaignMotionCapability))
-	mux.Handle("GET /api/v1/campaigns/{id}/motion-handoff", s.requireSession(s.handleCampaignMotionGet))
-	mux.Handle("POST /api/v1/campaigns/{id}/motion-handoff", s.requireSession(s.handleCampaignMotionPost))
+	if s.Cfg.FeatureCampaignMotion {
+		mux.Handle("GET /api/v1/campaigns/{id}/motion-handoff", s.requireSession(s.handleCampaignMotionGet))
+		mux.Handle("POST /api/v1/campaigns/{id}/motion-handoff", s.requireSession(s.handleCampaignMotionPost))
+	}
 }
 
 func (s *Server) handleCampaignMotionCapability(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, motionView(nil, campaignmotion.Conversion{}, campaignmotion.Notice))
+	payload := motionView(nil, campaignmotion.Conversion{}, campaignmotion.Notice)
+	payload["enabled"] = s.Cfg.FeatureCampaignMotion
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (s *Server) handleCampaignMotionGet(w http.ResponseWriter, r *http.Request) {

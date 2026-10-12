@@ -8,13 +8,19 @@ import (
 func TestCampaignMotionOffIsInvisible(t *testing.T) {
 	h := newHarness(t)
 	tenant, _, _ := h.seed()
-	status, _, _ := h.do("GET", "/api/v1/campaign-motion/capability", sessionOwnerA, tenant, "")
-	if status != 404 {
-		t.Fatalf("capability = %d", status)
+	// HUI-2626 盲评 P2①：capability 发现始终可达（200 + enabled:false），
+	// 面板据此隐藏，不再打 404；交出写路径仍整体不可见（fail-closed 不变）。
+	cap := h.mustDo("GET", "/api/v1/campaign-motion/capability", sessionOwnerA, tenant, "", 200)
+	if enabled, ok := cap["enabled"].(bool); !ok || enabled {
+		t.Fatalf("capability off must report enabled=false: %v", cap)
 	}
-	status, _, _ = h.do("POST", "/api/v1/campaigns/lead_missing/motion-handoff", sessionOwnerA, tenant, `{}`)
+	status, _, _ := h.do("POST", "/api/v1/campaigns/lead_missing/motion-handoff", sessionOwnerA, tenant, `{}`)
 	if status != 404 {
 		t.Fatalf("post = %d", status)
+	}
+	status, _, _ = h.do("GET", "/api/v1/campaigns/lead_missing/motion-handoff", sessionOwnerA, tenant, "")
+	if status != 404 {
+		t.Fatalf("get = %d", status)
 	}
 }
 
