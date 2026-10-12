@@ -1,0 +1,46 @@
+[
+  {
+    "step": "today_loaded",
+    "hasInfoGroup": true,
+    "hasVisitor": true
+  },
+  {
+    "step": "detail_opened_assign_block_visible",
+    "url": "http://127.0.0.1:29330/leads/lead_84fe6c80528bcc6db3bc811d3ea03c7c"
+  },
+  {
+    "step": "assigned",
+    "message": "已分配负责人"
+  },
+  {
+    "step": "followup_submitted",
+    "note_len": 11
+  },
+  {
+    "step": "today_after_followup",
+    "visitorStillInInfo": false
+  },
+  {
+    "step": "reload_ok",
+    "hasVisitor": false
+  },
+  {
+    "step": "relogin_detail",
+    "stillUnassigned": false,
+    "assignBlockPresent": false
+  },
+  {
+    "step": "tally",
+    "viewport": "390x844",
+    "clicks": 7,
+    "fills": 2,
+    "selects": 1,
+    "consoleErrorCount": 0,
+    "console404Count": 0,
+    "consoleErrors": []
+  },
+  {
+    "step": "assert_no_console_404",
+    "pass": true
+  }
+]
