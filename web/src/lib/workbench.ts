@@ -1,5 +1,6 @@
 // 销售工作台展示规则（HUI-1893）。队列和金额的真源在 Go 服务端，
 // 这里只决定页面怎么把已经分好的事实画出来。
+import { humanTime, isEngineeringRef } from "@/lib/humanize";
 
 export const NARROW_ACTIONS = ["查看新线索", "记跟进", "安排下一次"] as const;
 
@@ -156,7 +157,10 @@ export function statusLine(facts: StatusFacts): string {
 
 export function sourceText(source?: DeskItem["source"]): string {
   if (!source) return "来源未记录";
-  const parts = [source.form, source.activity, source.channel, source.at].filter((part) => !!part);
+  // HUI-2626 盲评 P2③：显示层人化——工程引用退场、秒级时间；原始值留在数据层。
+  const parts = [source.form, source.activity, source.channel, humanTime(source.at)]
+    .filter((part): part is string => !!part)
+    .filter((part) => !isEngineeringRef(part));
   return parts.length > 0 ? parts.join(" · ") : "来源未记录";
 }
 

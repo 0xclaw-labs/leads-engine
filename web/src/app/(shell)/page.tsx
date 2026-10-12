@@ -332,7 +332,8 @@ export default function Home() {
           </section>
         ))
         : null}
-      <p className="muted">
+      {/* HUI-2626 盲评 P3：foot-nav 让每个链接整体换行，390 不再从词中间折断。 */}
+      <p className="muted foot-nav">
         <Link href="/leads">线索</Link> · <Link href="/contacts">客户档案</Link> · <Link href="/opportunities">商机</Link> ·{" "}
         <Link href="/reception">接待</Link> · <Link href="/intent">意向分级</Link> · <Link href="/attribution">来源与费用</Link> · <Link href="/subscription">订阅与用量</Link> ·{" "}
         <Link href="/isolation">租户隔离与导出</Link>

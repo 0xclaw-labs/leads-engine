@@ -144,8 +144,9 @@ describe("sales desk", () => {
     const first = renderLeadFacts(kept.unprocessed[0], fixture.joint_chain);
     const second = renderLeadFacts(refreshed.unprocessed[0], fixture.joint_chain);
     expect(refreshedLead(first, second)?.id).toBe(fixture.lead.id);
+    // HUI-2626 盲评 P2③：来源行显示层人化（工程引用退场、微秒 ISO 变本地秒级），
+    // 原始 at 仍在接口数据里，这里只改显示契约断言。
     expect(first).toMatchObject({
-      source: "手工录入 · 2026-09-29T01:00:00Z",
       owner: "Sales A1",
       state: "已接收 · 已分配",
       next: "不是模型输出 · 安排下一次跟进",
@@ -153,6 +154,9 @@ describe("sales desk", () => {
       chain: "联合经营链未完成",
       outreachSubmitted: false,
     });
+    expect(first.source).toContain("手工录入");
+    expect(first.source).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(first.source).not.toContain("T");
     expect(first.state).not.toContain("已跟进");
     expect(first.sync).not.toBe("已跟进");
     expect(first.chain).not.toContain("已跟进");

@@ -5,6 +5,8 @@ export interface LightCapability {
   model_ready?: boolean;
   live_charge?: number;
   note?: string;
+  /** HUI-2626 盲评 P2①：capability 发现关闭时也 200，用 enabled=false 收敛。 */
+  enabled?: boolean;
 }
 
 export interface LightDraftView {
@@ -44,4 +46,15 @@ export function draftStatus(row: LightDraftView | null | undefined): DraftStatus
     marketingPermitted: false,
     generated: false,
   };
+}
+
+/** HUI-2626 盲评 P2③：事实复选框显示层用中文标签，原始 key 仍是提交值。 */
+const FACT_LABELS: Record<string, string> = {
+  activity_ref: "活动引用",
+  title: "标题",
+  price_cents: "价格（分）",
+};
+
+export function factLabel(key: string): string {
+  return FACT_LABELS[key] ?? key;
 }
