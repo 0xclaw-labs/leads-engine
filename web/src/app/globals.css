@@ -40,6 +40,12 @@ main {
   font-size: 0.9rem;
 }
 
+/* HUI-2626 盲评 P3：页脚链接整体换行，不从词中间折断（订/阅与用量）。 */
+.foot-nav a {
+  display: inline-block;
+  white-space: nowrap;
+}
+
 code {
   background: #eef2f7;
   padding: 0.1rem 0.35rem;
@@ -499,6 +505,15 @@ button.primary,
   height: 2.25rem;
   border-radius: 10px;
   grid-row: 1 / span 2;
+  /* HUI-2626 盲评 P2①：内联图标居中（零外链，不存在 404 路径）。 */
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.state-mark svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .state-mark-loading {

@@ -19,12 +19,14 @@ import (
 )
 
 func (s *Server) mountLightCopy(mux *http.ServeMux) {
-	if !s.Cfg.FeatureLightCopy {
-		return
-	}
+	// HUI-2626 盲评 P2①：capability 发现始终可达——关闭时 200+enabled:false，
+	// 面板据此隐藏，详情页不再每次都打 404。fail-closed 不变：关闭时草稿读写
+	// 路由仍不挂载，一样不可见。
 	mux.Handle("GET /api/v1/light-copy/capability", s.requireSession(s.handleLightCapability))
-	s.mountLightSubject(mux, "opportunities", lightcopy.KindOpportunity)
-	s.mountLightSubject(mux, "campaigns", lightcopy.KindCampaign)
+	if s.Cfg.FeatureLightCopy {
+		s.mountLightSubject(mux, "opportunities", lightcopy.KindOpportunity)
+		s.mountLightSubject(mux, "campaigns", lightcopy.KindCampaign)
+	}
 }
 
 func (s *Server) mountLightSubject(mux *http.ServeMux, segment, subjectKind string) {
@@ -65,6 +67,7 @@ func (s *Server) handleLightCapability(w http.ResponseWriter, r *http.Request) {
 		note = "文案生成走平台任务计量（报价/预占/结算沿既有语义）。任务未完成或未返回正文时仍然拒绝，不写占位。生成完成不等于已发送、已发布或已取得营销许可。"
 	}
 	payload := map[string]any{
+		"enabled":     s.Cfg.FeatureLightCopy,
 		"model_ready": ready,
 		"live_charge": 0,
 		"tools":       []string{lightcopy.ToolGoBoost, lightcopy.ToolProductImage, lightcopy.ToolDigitalHuman, lightcopy.ToolAiCut},

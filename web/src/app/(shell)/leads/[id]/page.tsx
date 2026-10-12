@@ -8,6 +8,7 @@ import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
+import { eventLine, humanTime, leadTitle } from "@/lib/humanize";
 import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import { patchJson, postJson } from "@/lib/fetchJson";
 import { assignBody, assignableMembers, needsOwner, type MemberOption, type MemberRow } from "@/lib/leadAssign";
@@ -49,15 +50,6 @@ interface TimelineResponse {
   message?: string;
   error?: string;
 }
-
-const KIND_LABEL: Record<string, string> = {
-  source: "来源",
-  assignment: "分配",
-  follow_up: "跟进",
-  opportunity: "商机",
-  consent: "授权",
-  system: "系统",
-};
 
 export default function LeadDeskPage() {
   const params = useParams<{ id: string }>();
@@ -229,7 +221,7 @@ export default function LeadDeskPage() {
           <RecordFrame
             width={width}
             tone="human"
-            title="这条线索"
+            title={leadTitle(visible.source)}
             facts={[
               { label: "来源", value: sourceText(visible.source) },
               { label: "负责人", value: ownerLine(visible.owner_label, visible.assignment_reason) },
@@ -239,7 +231,7 @@ export default function LeadDeskPage() {
               { label: "下一步", value: nextLine(visible.next) },
               { label: "建议", value: modelAdviceLine() },
               ...(visibleOutreach(visible.outreach_notice) ? [{ label: "触达", value: visibleOutreach(visible.outreach_notice) }] : []),
-              ...(visible.next?.at ? [{ label: "时间", value: visible.next.at }] : []),
+              ...(visible.next?.at ? [{ label: "时间", value: humanTime(visible.next.at) }] : []),
             ]}
           >
             <p data-joint-chain="incomplete">{jointChainLine(visible.joint_chain)}</p>
@@ -277,16 +269,16 @@ export default function LeadDeskPage() {
             <ol className="desk-list">
               {(visible.events ?? []).map((event, index) => (
                 <li key={`${event.kind}-${event.at}-${index}`}>
-                  <p>
-                    {KIND_LABEL[event.kind] ?? event.kind} · {event.summary}
-                  </p>
-                  <p className="muted">{event.at}</p>
+                  {/* HUI-2626 盲评 P2③：显示层人化——类别/授权项映射成话，微秒 ISO 变本地秒级；原始值留在接口数据里。 */}
+                  <p>{eventLine(event.kind, event.summary)}</p>
+                  <p className="muted">{humanTime(event.at)}</p>
                   {event.contact_plaintext ? <p>联系方式 {event.contact_plaintext}</p> : null}
                 </li>
               ))}
             </ol>
           </div>
-          {id ? <LightCopyPanel subjectKind="campaign" subjectId={id} /> : null}
+          {/* HUI-2626 盲评 P2①：轻文案只在线索带活动出处时挂载——普通线索不再打必 404 的探测。 */}
+          {id && visible?.source?.activity ? <LightCopyPanel subjectKind="campaign" subjectId={id} /> : null}
           {id ? <CampaignMotionPanel campaignId={id} /> : null}
           {id ? <MatrixDraftPanel campaignId={id} /> : null}
           <div className="card stack-form">

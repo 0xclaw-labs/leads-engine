@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- HUI-2626 盲评 P2①：应用自带图标，浏览器不再请求 /favicon.ico 吃 404。 -->
+  <rect width="32" height="32" rx="7" fill="#2563eb" />
+  <path d="M8 21.5V10.5l8 8 8-8v11" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

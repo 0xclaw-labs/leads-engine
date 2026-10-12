@@ -17,13 +17,19 @@ func TestLightCopyFeatureOffIsInvisible(t *testing.T) {
 	h := newHarness(t)
 	tenant, _, contact := h.seed()
 	opp := h.createOpp(t, sessionOwnerA, tenant, contact, "门店开业", "merchant_customer", "")
-	status, _, _ := h.do("GET", "/api/v1/light-copy/capability", sessionOwnerA, tenant, "")
-	if status != 404 {
-		t.Fatalf("capability = %d", status)
+	// HUI-2626 盲评 P2①：capability 发现始终可达（200 + enabled:false），
+	// 面板据此隐藏，详情页不再每次都打 404；写路径仍整体不可见（fail-closed 不变）。
+	cap := h.mustDo("GET", "/api/v1/light-copy/capability", sessionOwnerA, tenant, "", 200)
+	if enabled, ok := cap["enabled"].(bool); !ok || enabled {
+		t.Fatalf("capability off must report enabled=false: %v", cap)
 	}
-	status, _, _ = h.do("PUT", "/api/v1/opportunities/"+opp+"/light-copy/reply", sessionOwnerA, tenant, `{"body":"草稿"}`)
+	status, _, _ := h.do("PUT", "/api/v1/opportunities/"+opp+"/light-copy/reply", sessionOwnerA, tenant, `{"body":"草稿"}`)
 	if status != 404 {
 		t.Fatalf("save = %d", status)
+	}
+	status, _, _ = h.do("GET", "/api/v1/opportunities/"+opp+"/light-copy", sessionOwnerA, tenant, "")
+	if status != 404 {
+		t.Fatalf("list = %d", status)
 	}
 }
 
@@ -200,6 +206,9 @@ func TestLightCapabilityReportsConfiguredSeam(t *testing.T) {
 	cap := h.mustDo("GET", "/api/v1/light-copy/capability", sessionOwnerA, tenant, "", 200)
 	if cap["model_ready"] != false || cap["provider"] != nil {
 		t.Fatalf("unconfigured capability must stay honest: %v", cap)
+	}
+	if cap["enabled"] != true {
+		t.Fatalf("capability on must report enabled=true: %v", cap)
 	}
 	h.api.LightCopyPhraser = &stubTextGenerator{fn: func(in platformtask.GenerateInput) platformtask.GenerateResult {
 		return platformtask.GenerateResult{TaskID: "t", BillingVerdict: "not_completed"}
