@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { failureText } from "@/lib/productShell";
-import { draftStatus, presentLightCopy, type LightCapability } from "@/lib/lightCopy";
+import { draftStatus, factLabel, presentLightCopy, type LightCapability } from "@/lib/lightCopy";
 
 interface DraftRow {
   id: string;
@@ -63,11 +63,17 @@ export function LightCopyPanel({
     if (!subjectId || !scope.tenant) return;
     const init = scopeInit(scope.tenant);
     const capRes = await fetch("/api/light-copy/capability", init);
+    // HUI-2626 盲评 P2①：capability 关闭时是 200+enabled:false，面板据此隐藏；
+    // 404 兜底保留（旧服务端契约）。不再让探测打进 console。
     if (capRes.status === 404) {
       setHidden(true);
       return;
     }
-    const cap = (await capRes.json()) as LightCapability;
+    const cap = (await capRes.json().catch(() => null)) as LightCapability | null;
+    if (cap && cap.enabled === false) {
+      setHidden(true);
+      return;
+    }
     setNote(presentLightCopy(cap).note);
     const listRes = await fetch(base, init);
     if (listRes.status === 404) {
@@ -184,7 +190,7 @@ export function LightCopyPanel({
         交给后续工具的事实：
         {factChoices.map((key) => (
           <label key={key}>
-            <input type="checkbox" checked={selected.includes(key)} onChange={() => toggleFact(key)} /> {key}
+            <input type="checkbox" checked={selected.includes(key)} onChange={() => toggleFact(key)} /> {factLabel(key)}
           </label>
         ))}{" "}
         <button

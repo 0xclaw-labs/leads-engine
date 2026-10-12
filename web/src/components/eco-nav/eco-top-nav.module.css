@@ -57,6 +57,8 @@
   background: transparent;
   border: 1px solid transparent;
   font: inherit;
+  /* HUI-2626 盲评 P1：导航项文字（碰一碰/接单）不得逐字竖排折行。 */
+  white-space: nowrap;
 }
 
 .link {
@@ -84,6 +86,8 @@
 .roleLine {
   color: var(--muted);
   font-size: 0.85rem;
+  /* HUI-2626 盲评 P1：额度/角色徽标整体换行，不在字与字之间碎开。 */
+  white-space: nowrap;
 }
 
 .menu {
@@ -107,10 +111,38 @@
 }
 
 /* HUI-2626：≤430 触控目标——顶部导航的应用/租户切换控件 ≥44px（WCAG 2.5.8）。 */
+/* HUI-2626 盲评 P1：≤430 顶栏改为换行收纳——bar 放开固定高度、隐藏弹性占位、
+   账号区靠右自成一段；全条目 nowrap，390 不再出现逐字竖排/chips 碎片/挤压截断。
+   1440 布局不受影响（媒体查询外零改动）。 */
 @media (max-width: 430px) {
   .link,
   .button,
   .quiet {
     height: 44px;
+  }
+
+  .bar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 56px;
+    padding: 6px 12px;
+    row-gap: 2px;
+  }
+
+  .spacer {
+    display: none;
+  }
+
+  .right {
+    margin-left: auto;
+  }
+
+  .apps,
+  .context {
+    flex-wrap: wrap;
+  }
+
+  .context > * {
+    min-width: 0;
   }
 }

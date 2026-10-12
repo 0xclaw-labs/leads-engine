@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+// 默认导入供 vitest/esbuild 的 classic JSX 转换使用（Next SWC automatic runtime 不受影响）。
+import React, { useEffect, useState } from "react";
 import { navbarCrmAffordances } from "@/lib/eco-nav/affordances";
 import {
   billingBadgeText,
@@ -113,7 +114,8 @@ export function EcoTopNav({
               );
             })
           : null}
-        <span data-testid="eco-billing">{billingBadgeText(nav)}</span>
+        {/* HUI-2626 盲评 P1：额度徽标走 badge 样式，390 不再逐字断行成碎片。 */}
+        <span className={styles.badge} data-testid="eco-billing">{billingBadgeText(nav)}</span>
         <span className={styles.badge} data-testid="eco-role">
           {roleText}
         </span>

@@ -37,6 +37,37 @@ export function ToneBadge({ tone }: { tone: FactTone }) {
   );
 }
 
+// HUI-2626 盲评 P2①：空/错/恢复态的标记不再是无图形的灰块——内联 SVG 图标
+// （零网络请求，不存在 404 路径）；loading 保留渐变骨架原样。
+function StateMarkGlyph({ kind }: { kind: "loading" | "empty" | "error" | "recovery" }) {
+  if (kind === "loading") return null;
+  const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+      {kind === "empty" ? (
+        <>
+          <path d="M4 13h4l2 3h4l2-3h4" {...stroke} />
+          <path d="M6.2 6.2 4 13v5a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 18v-5l-2.2-6.8A1.5 1.5 0 0 0 16.4 5H7.6a1.5 1.5 0 0 0-1.4 1.2Z" {...stroke} />
+        </>
+      ) : null}
+      {kind === "error" ? (
+        <>
+          <path d="M12 4.6 21 19.4H3L12 4.6Z" {...stroke} />
+          <path d="M12 10v4.2" {...stroke} />
+          <circle cx="12" cy="16.8" r="0.4" fill="currentColor" />
+        </>
+      ) : null}
+      {kind === "recovery" ? (
+        <>
+          <circle cx="12" cy="12" r="8.2" {...stroke} />
+          <path d="M12 11v5.4" {...stroke} />
+          <circle cx="12" cy="7.8" r="0.4" fill="currentColor" />
+        </>
+      ) : null}
+    </svg>
+  );
+}
+
 export function SurfaceState({
   kind,
   title,
@@ -56,7 +87,9 @@ export function SurfaceState({
   }[kind];
   return (
     <section className="surface-state" data-surface-state={kind} role={kind === "error" ? "alert" : "status"} aria-busy={kind === "loading" ? true : undefined}>
-      <span className={`state-mark state-mark-${kind}`} data-state-mark={kind} aria-hidden="true" />
+      <span className={`state-mark state-mark-${kind}`} data-state-mark={kind} aria-hidden="true">
+        <StateMarkGlyph kind={kind} />
+      </span>
       {kind === "loading" ? (
         <div data-skeleton="block" aria-hidden="true">
           <span data-skeleton="title" />

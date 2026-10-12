@@ -5,6 +5,10 @@ import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { failureText } from "@/lib/productShell";
 import { presentCampaignMotion } from "@/lib/campaignMotion";
 
+interface MotionCapability {
+  enabled?: boolean;
+}
+
 interface MotionExport {
   campaign_goal?: string;
   target_audience?: string;
@@ -59,7 +63,14 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
     if (!campaignId || !scope.tenant) return;
     const init = scopeInit(scope.tenant);
     const capRes = await fetch("/api/campaign-motion/capability", init);
-    if (!capRes.ok) {
+    // HUI-2626 盲评 P2①：capability 关闭时是 200+enabled:false，据此隐藏；
+    // 404 兜底保留（旧服务端契约）。不再让探测打进 console。
+    if (capRes.status === 404) {
+      setHidden(true);
+      return;
+    }
+    const cap = (await capRes.json().catch(() => null)) as MotionCapability | null;
+    if (cap && cap.enabled === false) {
       setHidden(true);
       return;
     }
