@@ -809,7 +809,13 @@ func (s *Server) handlePublicMessage(w http.ResponseWriter, r *http.Request) {
 		gj = []byte("[]")
 	}
 	usageKey := sess.ID + ":" + in.ClientMsgID
-	call := s.phraseReception(r.Context(), sess, in.ClientMsgID, out)
+	call, draft := s.phraseReception(r.Context(), sess, in.ClientMsgID, out)
+	// A model draft replaces the FAQ answer only when every number and promise
+	// is already in the grounded answer. Otherwise the FAQ answer stays.
+	replyBody := out.Body
+	if grounded, ok := reception.GroundedReplyText(draft, out.Body); ok {
+		replyBody = grounded
+	}
 	fresh, freshErr := s.St.GetReceptionSession(sess.TenantID, sess.ID)
 	late := freshErr != nil || fresh.Epoch != sess.Epoch || fresh.Mode != sess.Mode || fresh.Status != sess.Status
 	status := "generated"
@@ -820,7 +826,7 @@ func (s *Server) handlePublicMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	rp, err := s.St.InsertReceptionReply(store.ReceptionReply{
 		TenantID: sess.TenantID, SessionID: sess.ID, Epoch: sess.Epoch, SessionVersion: sess.Version,
-		Kind: out.Kind, Body: out.Body, CitationsJSON: string(cj), GapsJSON: string(gj),
+		Kind: out.Kind, Body: replyBody, CitationsJSON: string(cj), GapsJSON: string(gj),
 		Status: status, ClientMsgID: in.ClientMsgID,
 	})
 	if err != nil {
@@ -921,12 +927,13 @@ func groundedFAQ(out reception.ComposeOutput) bool {
 	return false
 }
 
-// phraseReception records a model attempt. Without a configured task client the
-// verdict stays not_completed and the grounded body is left unchanged.
-func (s *Server) phraseReception(ctx context.Context, sess store.ReceptionSession, clientMsgID string, out reception.ComposeOutput) store.ReceptionModelCall {
+// phraseReception records a model attempt and returns the model draft text.
+// Without a configured task client the verdict stays not_completed and the
+// draft is empty; the grounded body is then used unchanged.
+func (s *Server) phraseReception(ctx context.Context, sess store.ReceptionSession, clientMsgID string, out reception.ComposeOutput) (store.ReceptionModelCall, string) {
 	fallback := store.ReceptionModelCall{BillingVerdict: "not_completed"}
 	if s.ReceptionPhraser == nil || !groundedFAQ(out) {
-		return fallback
+		return fallback, ""
 	}
 	ids := make([]string, 0, len(out.Citations))
 	for _, c := range out.Citations {
@@ -941,9 +948,9 @@ func (s *Server) phraseReception(ctx context.Context, sess store.ReceptionSessio
 		CitationIDs:    ids,
 	})
 	if got.BillingVerdict != "recorded" || strings.TrimSpace(got.TaskID) == "" || strings.Contains(strings.ToUpper(got.BillingVerdict), "PASS") {
-		return store.ReceptionModelCall{TaskID: strings.TrimSpace(got.TaskID), BillingVerdict: "not_completed"}
+		return store.ReceptionModelCall{TaskID: strings.TrimSpace(got.TaskID), BillingVerdict: "not_completed"}, ""
 	}
-	return store.ReceptionModelCall{TaskID: strings.TrimSpace(got.TaskID), CostCents: 1, BillingVerdict: "recorded"}
+	return store.ReceptionModelCall{TaskID: strings.TrimSpace(got.TaskID), CostCents: 1, BillingVerdict: "recorded"}, got.Text
 }
 
 func modelPayloadFrom(call store.ReceptionModelCall, err error) map[string]any {
