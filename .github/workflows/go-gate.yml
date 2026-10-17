@@ -1,6 +1,9 @@
 # R17d（ap-20261011）：leads server 的 Go 门。evidence-gate 不动。
-# hosted ubuntu；server/go.mod 只有公开依赖（modernc.org/sqlite），无私有模块，
+# server/go.mod 只有公开依赖（modernc.org/sqlite，纯 Go 实现无 CGO），无私有模块，
 # 无需跨仓凭据。live matrix 测试无 env 自动 skip，CI 零影响。
+# 2026-10-17：迁 Windows 专机（win-ci 标签）。个人账号无 org 级 runner，leads/touch 各注册专机
+# （win-leads-engine-01），兑现本注释原"未注册专机先用 hosted"的既定意图。
+# 专机离线时 job 排队等待；回退=runs-on 改回 ubuntu-latest 一行。
 name: go-gate
 
 on:
@@ -16,12 +19,17 @@ on:
 
 jobs:
   go-gate:
-    runs-on: ubuntu-latest
+    runs-on: [win-ci]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
+          cache: false
       - name: build + test (GOWORK=off)
         working-directory: server
         run: |
