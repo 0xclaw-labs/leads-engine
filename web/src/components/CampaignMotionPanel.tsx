@@ -97,7 +97,12 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
       return;
     }
     setHidden(false);
-    setAllowedTemplates(Array.isArray(cap?.allowed_templates) ? cap.allowed_templates.filter((item) => typeof item === "string") : []);
+    const C0_TEMPLATES = ["immediate", "night_batch", "free_idle", "paid_elastic"];
+    setAllowedTemplates(
+      Array.isArray(cap?.allowed_templates)
+        ? cap.allowed_templates.filter((item): item is string => typeof item === "string" && C0_TEMPLATES.includes(item))
+        : [],
+    );
     const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, init);
     if (res.status === 404) {
       setMessage("当前线索不是活动。这一步只交出活动事实。");
