@@ -27,8 +27,9 @@
 
 ## Code review
 
-- Standards: 待补。
-- Spec: 待补。
+- Standards: PASS（gofmt 干净；沿用仓内 campaignmotion 白名单/源码契约测试惯例；合同类型原样副本）。
+  Judgement notes：①`execution_preference` 只加 optional 命名模板，不扩合同、不接受数字 priority；②`job_queue_view:null` 是显式未知；③同形内核为独立部署副本。
+- Spec: PASS（最小事实交接/偏好、队列等待与人工等待分离、费用归因、候选回流、不自动外发均有实现与测试）；缺口：真实 RefVerifier/StudioPort/账务/投影未接（UNKNOWN）。
 
 ## Blocked / UNKNOWN
 
