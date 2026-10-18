@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { failureText } from "@/lib/productShell";
 import { presentCampaignMotion } from "@/lib/campaignMotion";
+import { presentCampaignProduction, validateHandoffFacts } from "@/lib/campaignMotionQueue";
 
 interface MotionCapability {
   enabled?: boolean;
+  allowed_templates?: string[];
 }
 
 interface MotionExport {
@@ -24,6 +26,12 @@ interface MotionResponse {
   export?: MotionExport | null;
   error?: string;
   message?: string;
+  job_queue_view?: unknown;
+  human_followup_pending?: boolean;
+  model_calls?: number;
+  channel_count?: number;
+  model_cost_minor?: number | null;
+  payer_kind?: string;
 }
 
 export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
@@ -42,7 +50,21 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [recorded, setRecorded] = useState(false);
+  const [queueView, setQueueView] = useState<unknown>(undefined);
+  const [humanPending, setHumanPending] = useState(false);
+  const [productionMeta, setProductionMeta] = useState({ model_calls: 0, channel_count: 0, model_cost_minor: null as number | null, payer_kind: "" });
+  const [allowedTemplates, setAllowedTemplates] = useState<string[]>([]);
+  const [preference, setPreference] = useState("");
   const view = presentCampaignMotion({ channels: channels.split(/[\s,，、]+/).filter(Boolean) });
+  const production = presentCampaignProduction({
+    campaign_id: campaignId,
+    job_queue_view: queueView,
+    human_followup_pending: humanPending,
+    model_calls: productionMeta.model_calls,
+    channel_count: productionMeta.channel_count || view.channels.length,
+    model_cost_minor: productionMeta.model_cost_minor,
+    payer_kind: productionMeta.payer_kind,
+  });
 
   const applyExport = useCallback((doc: MotionExport | null | undefined) => {
     if (!doc) return;
@@ -75,6 +97,7 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
       return;
     }
     setHidden(false);
+    setAllowedTemplates(Array.isArray(cap?.allowed_templates) ? cap.allowed_templates.filter((item) => typeof item === "string") : []);
     const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, init);
     if (res.status === 404) {
       setMessage("当前线索不是活动。这一步只交出活动事实。");
@@ -86,6 +109,14 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
       return;
     }
     const body = (await res.json()) as MotionResponse;
+    setQueueView(body.job_queue_view);
+    setHumanPending(body.human_followup_pending === true);
+    setProductionMeta({
+      model_calls: typeof body.model_calls === "number" ? body.model_calls : 0,
+      channel_count: typeof body.channel_count === "number" ? body.channel_count : 0,
+      model_cost_minor: typeof body.model_cost_minor === "number" ? body.model_cost_minor : null,
+      payer_kind: typeof body.payer_kind === "string" ? body.payer_kind : "",
+    });
     applyExport(body.export);
   }, [applyExport, campaignId, scope.tenant]);
 
@@ -115,6 +146,13 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
     };
     if (fact.trim()) payload.approved_facts = [{ key: "fact", value: fact.trim(), confirmed: true }];
     if (assetID.trim()) payload.assets = [{ id: assetID.trim(), authorized: true }];
+    if (preference) payload.execution_preference = preference;
+    const facts = validateHandoffFacts(payload);
+    if (!facts.ok) {
+      setBusy(false);
+      setMessage(facts.message);
+      return;
+    }
     const headers = new Headers(scopeInit(scope.tenant).headers);
     headers.set("content-type", "application/json");
     const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, {
@@ -181,10 +219,39 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
       <p>
         渠道：{view.channels.join("、") || "还没有渠道名"}
       </p>
+      {allowedTemplates.length > 0 ? (
+        <label>
+          执行偏好（只从服务器允许的模板选）
+          <select value={preference} onChange={(e) => setPreference(e.target.value)} data-field="preference">
+            <option value="">按服务器默认</option>
+            {allowedTemplates.map((template) => (
+              <option key={template} value={template}>{template}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p data-field="preference-unknown">服务器未提供允许的执行模板；本页不传数字优先级。</p>
+      )}
       <button type="button" disabled={busy || !goal.trim() || !budgetID.trim() || view.channels.length === 0} onClick={() => void save()}>
         记下交出
       </button>
       {message ? <p>{message}</p> : null}
+      <section data-campaign-production="true">
+        <p data-field="waiting">
+          {production.waitLabel}：{production.etaText}
+          {production.nextWindowText ? ` · 下一窗口 ${production.nextWindowText}` : ""}
+          {production.policyVersion === null ? "" : ` · 策略版本 v${production.policyVersion}`}
+        </p>
+        {production.deadlineWarning ? <p data-field="deadline-warning">{production.deadlineWarning}</p> : null}
+        <p data-field="costs">{production.costs.note}</p>
+        <p data-field="payer">
+          {production.costs.payerText} · 模型成本 {production.costs.modelCostText} · {production.feeDisclosure}
+        </p>
+        <p data-field="crm">{production.crmNotice}</p>
+        <p data-field="auto" data-auto-outreach={String(production.autoOutreach)} data-auto-conversion={String(production.autoConversion)}>
+          {production.notice}
+        </p>
+      </section>
     </section>
   );
 }

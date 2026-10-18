@@ -44,6 +44,7 @@ var allowedTop = map[string]bool{
 	"cta":                   true,
 	"channels":              true,
 	"budget_attribution_id": true,
+	"execution_preference":  true,
 	"motion":                true,
 	"variant_binding":       true,
 }
@@ -79,7 +80,7 @@ var exportKey = map[string]bool{
 	"key": true, "value": true, "authorized_asset_ids": true, "cta": true,
 	"channels": true, "budget_attribution_id": true, "variants": true, "channel": true,
 	"motion": true, "project_id": true, "revision_id": true, "campaign_id": true, "digest": true,
-	"variant_id": true, "origin_context_ref": true,
+	"variant_id": true, "origin_context_ref": true, "execution_preference": true,
 }
 
 // ApprovedFact is one confirmed brand or product fact.
@@ -116,8 +117,11 @@ type Document struct {
 	CTA                 string         `json:"cta"`
 	Channels            []string       `json:"channels"`
 	BudgetAttributionID string         `json:"budget_attribution_id"`
-	Variants            []Variant      `json:"variants"`
-	Motion              MotionRef      `json:"motion"`
+	// ExecutionPreference is a named preference only (immediate/night_batch/
+	// free_idle/paid_elastic). No numeric priority is ever accepted or exported.
+	ExecutionPreference string    `json:"execution_preference,omitempty"`
+	Variants            []Variant `json:"variants"`
+	Motion              MotionRef `json:"motion"`
 }
 
 // Conversion stays on the leads side. It is not written to a creative project.
@@ -216,6 +220,17 @@ func Prepare(tenantID, campaignID string, raw []byte, writer CreativeProjectWrit
 	}
 
 	authorized := scrubAssets(assets, secrets)
+	if _, ok := obj["priority"]; ok {
+		return Result{}, ErrInvalid
+	}
+	if _, ok := obj["requested_priority"]; ok {
+		return Result{}, ErrInvalid
+	}
+	preference, err := parseExecutionPreference(obj["execution_preference"])
+	if err != nil {
+		return Result{}, err
+	}
+
 	doc := Document{
 		CampaignGoal:        goal,
 		TargetAudience:      audience,
@@ -224,6 +239,7 @@ func Prepare(tenantID, campaignID string, raw []byte, writer CreativeProjectWrit
 		CTA:                 cta,
 		Channels:            channels,
 		BudgetAttributionID: budget,
+		ExecutionPreference: preference,
 		Variants:            variantsFrom(channels),
 		Motion:              motion,
 	}
@@ -785,4 +801,25 @@ func fieldBool(fields map[string]json.RawMessage, key string) (bool, error) {
 func isNull(raw json.RawMessage) bool {
 	trimmed := bytes.TrimSpace(raw)
 	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null"))
+}
+
+// parseExecutionPreference accepts only the C0 template names. A client cannot
+// declare a numeric priority; that is rejected before this helper.
+func parseExecutionPreference(raw json.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "", nil
+	}
+	var text string
+	if err := json.Unmarshal(trimmed, &text); err != nil {
+		return "", ErrInvalid
+	}
+	switch strings.TrimSpace(text) {
+	case "":
+		return "", nil
+	case "immediate", "night_batch", "free_idle", "paid_elastic":
+		return strings.TrimSpace(text), nil
+	default:
+		return "", ErrInvalid
+	}
 }
