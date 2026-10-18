@@ -6,6 +6,7 @@
 - Base: `912fcb78`（origin/main）
 - Head: `43e4f14`（交付时更新为本分支最新 SHA）
 - Worktree: `.worktrees/mx-ops-2747-leads-engine`
+- PR: [#62](https://github.com/0xclaw-labs/leads-engine/pull/62)（OPEN，不合并/不部署）
 - Contract: `mx-ops-c0/v1 @ 6ffc90ca`（`docs/mx-ops/2747/contract-version.md`；无 additive）
 
 ## Scope done（逐条对工单 2026-10-18 MX-OPS 增量）
