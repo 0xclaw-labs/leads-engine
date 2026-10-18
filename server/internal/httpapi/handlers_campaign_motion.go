@@ -125,7 +125,11 @@ func motionView(export json.RawMessage, local campaignmotion.Conversion, notice 
 		"creative_project_writes": 0,
 		"piece_generated":         false,
 		"piece_sent":              false,
-		"notice":                  notice,
+		// MX-OPS: queue projection is not wired yet; explicit null is honest
+		// (unknown ≠ 0), and human follow-up is a separate wait kind.
+		"job_queue_view":         nil,
+		"human_followup_pending": false,
+		"notice":                 notice,
 	}
 }
 
