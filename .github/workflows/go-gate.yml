@@ -19,10 +19,11 @@ on:
 
 jobs:
   go-gate:
-    # 2026-10-19：ciwin 故障期间 win-ci 专机离线，main 的 go 门整体停摆。改跨平台标签
-    # [xplat]（fleet 组 mac+win runner 共用；本 job 纯 Go + bash 无 OS 绑定，两边都验证过）。
-    # 回退=改回 [win-ci]；xplat 标签现挂在 win-leads-engine-01 与 5 台 mac runner 上。
-    runs-on: [self-hosted, macOS, ARM64]
+    # 2026-10-19：ciwin 故障期间 win-ci 专机离线，main 的 go 门整体停摆。改跨平台标签 [xplat]
+    # （fleet 组 mac+win runner 共用；本 job 纯 Go + bash 无 OS 绑定）。回退=改回 [win-ci]。
+    # 排查附记：org 迁移后 fleet 组 allows_public_repositories 为 false，本仓（公开）任何标签都
+    # 派不出去——10-20 已开闸；fork-PR 审批保持 all_external_contributors。
+    runs-on: [xplat]
     timeout-minutes: 30
     defaults:
       run:
