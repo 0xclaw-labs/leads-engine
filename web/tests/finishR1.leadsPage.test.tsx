@@ -24,7 +24,7 @@ describe("leadRowFacts", () => {
     const value = (label: string) => facts.find((f) => f.label === label)?.value ?? "";
     expect(value("来源")).toBe("碰一碰");
     expect(value("状态")).toBe("跟进中");
-    expect(value("负责人")).toBe("销售甲 · 已分配给 销售甲");
+    expect(value("负责人")).toBe("销售甲");
   });
 
   it("keeps unassigned leads visibly unassigned", () => {

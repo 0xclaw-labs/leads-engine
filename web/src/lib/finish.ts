@@ -118,6 +118,7 @@ export function leadOwnerFacts(row: LeadListRow): string {
   if (reason === "待分配" || (!reason && !label)) {
     return "待分配（还没有负责人，先分配后才能持续跟进）";
   }
+  if (label && reason === `已分配给 ${label}`) return label;
   if (label && reason && reason !== "待分配") return `${label} · ${reason}`;
   return label || reason || "负责人信息待同步";
 }

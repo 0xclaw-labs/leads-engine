@@ -108,6 +108,7 @@ export default function Home() {
   const [drafts, setDrafts] = useState<Record<string, TodayDraft>>({});
   const [conversationFor, setConversationFor] = useState("");
   const appliedTenant = useRef<string | null>(null);
+  const shownTenant = useRef<string | null>(null);
 
   useEffect(() => {
     const restored = recallToday(readTodayMemory(), scope.tenant);
@@ -126,11 +127,20 @@ export default function Home() {
     persistTodayMemory(rememberToday(readTodayMemory(), scope.tenant ?? "", focusId, drafts));
   }, [scope.tenant, focusId, drafts]);
 
+  // HUI-2598 D4：只有换工作范围才清空列表。行内回复/接管后的 reload 若把
+  // groups 置空，会卸载会话面板并丢掉刚写好的输入与提示；刷新应保留旧数据，
+  // 新数据到达后原地替换。
   useEffect(() => {
+    if (shownTenant.current === scope.tenant) return;
+    shownTenant.current = scope.tenant;
     setLoadedFor(null);
     setGroups(null);
     setMoney(EMPTY_MONEY);
     setJointChain(null);
+    setConversationFor("");
+  }, [scope.tenant]);
+
+  useEffect(() => {
     const headers = listTenantHeader(scope.tenant);
     if (!headers) {
       setErr("");

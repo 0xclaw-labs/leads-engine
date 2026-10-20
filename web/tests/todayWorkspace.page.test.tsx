@@ -49,6 +49,14 @@ describe("today workspace structure", () => {
     expect(src).toContain("为什么在今天");
   });
 
+  it("keeps the list mounted on a same-tenant reload so an open panel is not lost", () => {
+    const src = page();
+    expect(src).toContain("shownTenant");
+    const fetchEffect = src.slice(src.indexOf("const headers = listTenantHeader(scope.tenant)"));
+    expect(fetchEffect.slice(0, 300)).not.toContain("setGroups(null)");
+    expect(fetchEffect.slice(0, 300)).not.toContain("setLoadedFor(null)");
+  });
+
   it("describes what will appear when the day is empty", () => {
     expect(page()).toContain("新的咨询、到期的跟进、未回复的会话和待确认的草稿会按顺序出现在这里");
   });
