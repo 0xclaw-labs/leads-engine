@@ -641,6 +641,11 @@ func (s *Store) ReviseGeneratedReply(tenantID, replyID, body string) (ReceptionR
 }
 
 // ApproveReceptionReply marks a current-epoch generated draft approved.
+//
+// HUI-2598 D3：人工接管（mode=human）下，人类自己保存的 generated 草稿也必须
+// 能批准后发送；否则「保存草稿」在 human 会话里是死路。AI 会话仍不能批准
+// generated 草稿（必须先接管/协助），轮次与 open 条件不放松。
+// approved ≠ sent：这里只解除发送门禁，不产生访客可见内容。
 func (s *Store) ApproveReceptionReply(tenantID, sessionID, replyID string) (ReceptionReply, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
@@ -656,7 +661,7 @@ func (s *Store) ApproveReceptionReply(tenantID, sessionID, replyID string) (Rece
 	}
 	res, err := tx.Exec(`UPDATE reception_replies SET status='approved', approved_at=?
 		WHERE id=? AND tenant_id=? AND status='generated'
-		AND epoch=(SELECT epoch FROM reception_sessions WHERE id=? AND tenant_id=? AND status='open' AND mode='assist')`,
+		AND epoch=(SELECT epoch FROM reception_sessions WHERE id=? AND tenant_id=? AND status='open' AND mode IN ('assist','human'))`,
 		now(), replyID, tenantID, sessionID, tenantID)
 	if err != nil {
 		return ReceptionReply{}, err
