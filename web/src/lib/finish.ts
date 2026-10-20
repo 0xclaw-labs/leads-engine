@@ -137,4 +137,3 @@ export function leadRowFacts(row: LeadListRow): { label: string; value: string }
     { label: "负责人", value: leadOwnerFacts(row) },
   ];
 }
-
