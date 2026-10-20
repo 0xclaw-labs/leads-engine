@@ -32,6 +32,7 @@ interface SessionView {
   version: number;
   status: string;
   owner_member_id?: string;
+  owner_label?: string;
   lead_id?: string;
   contact_id?: string;
   pending_reason?: string;
@@ -97,7 +98,7 @@ export default function SessionPanel({
       setSession(null);
       return;
     }
-    setSession(body.session);
+    setSession(body.session ? { ...body.session, owner_label: typeof body.owner_label === "string" ? body.owner_label : body.session.owner_label } : body.session);
     setMessages(body.messages ?? []);
     setReplies(body.replies ?? []);
     setModel(body.model ?? null);
@@ -194,7 +195,7 @@ export default function SessionPanel({
   const open = session.status === "open";
   const turns = [
     ...messages.map((message) => ({ key: message.id, at: message.created_at ?? "", who: "访客", body: message.body })),
-    ...replies.map((reply) => ({ key: reply.id, at: reply.created_at ?? "", who: reply.kind === "human" ? "人工" : "AI", body: reply.body })),
+    ...replies.map((reply) => ({ key: reply.id, at: reply.created_at ?? "", who: reply.kind === "human" ? "人工" : "草稿", body: reply.body })),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
   return (
@@ -202,8 +203,8 @@ export default function SessionPanel({
       <h2>会话 <code>{session.id}</code></h2>
       <p className="muted">
         {MODE_TEXT[session.mode] ?? session.mode} · 轮次 {session.epoch} · 版本 {session.version} · {session.status === "open" ? "进行中" : "已结案"}
-        {session.owner_member_id ? ` · 负责人 ${session.owner_member_id}` : ""}
-        {session.lead_id ? ` · 线索 ${session.lead_id}` : " · 尚未受权留资"}
+        {session.owner_member_id ? ` · 负责人 ${session.owner_label || "已接管（负责人待同步）"}` : ""}
+        {session.lead_id ? ` · 线索 ${session.lead_id.slice(0, 12)}…` : " · 尚未受权留资"}
       </p>
       {error ? <p className="error">{error}</p> : null}
       <div className="chat-log" aria-label="会话记录">

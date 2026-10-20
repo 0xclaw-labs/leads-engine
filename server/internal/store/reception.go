@@ -109,10 +109,12 @@ type ReceptionEvent struct {
 
 // DeskItem is the workbench row HUI-1893 can read.
 type DeskItem struct {
-	SessionID      string `json:"session_id"`
-	Mode           string `json:"mode"`
-	Epoch          int    `json:"epoch"`
-	OwnerMemberID  string `json:"owner_member_id,omitempty"`
+	SessionID     string `json:"session_id"`
+	Mode          string `json:"mode"`
+	Epoch         int    `json:"epoch"`
+	OwnerMemberID string `json:"owner_member_id,omitempty"`
+	// HUI-2598：显示层只读 owner_label；owner_member_id 仅用于权限/动作。
+	OwnerLabel     string `json:"owner_label,omitempty"`
 	PendingReason  string `json:"pending_reason,omitempty"`
 	HumanTodo      bool   `json:"human_todo"`
 	NextFollowUpAt string `json:"next_follow_up_at,omitempty"`

@@ -26,6 +26,26 @@ func TestHumanDraftCanBeApprovedAndSentOnce(t *testing.T) {
 	}
 	// 接管会开启新轮次并作废旧草稿；这是既有轮次语义，不绕过。
 	h.mustDo("POST", "/api/v1/reception/sessions/"+sid+"/takeover", sessionOwnerA, tenantA, `{}`, 200)
+	// HUI-2598：接待台/会话面板只显示负责人名字，不把 mem_* 当人名。
+	desk := h.mustDo("GET", "/api/v1/reception/desk", sessionOwnerA, tenantA, "", 200)
+	foundDesk := false
+	for _, raw := range desk["items"].([]any) {
+		row, _ := raw.(map[string]any)
+		if row["session_id"] == sid {
+			foundDesk = true
+			if row["owner_label"] != "Owner A" {
+				t.Fatalf("desk owner_label = %v", row["owner_label"])
+			}
+		}
+	}
+	if !foundDesk {
+		t.Fatalf("session missing from desk: %v", desk)
+	}
+	staff := h.mustDo("GET", "/api/v1/reception/sessions/"+sid, sessionOwnerA, tenantA, "", 200)
+	if staff["owner_label"] != "Owner A" {
+		t.Fatalf("session owner_label = %v", staff["owner_label"])
+	}
+
 	saved := h.mustDo("POST", "/api/v1/workbench/sessions/"+sid+"/reply-draft", sessionOwnerA, tenantA,
 		`{"client_reply_id":"desk-human-1","body":"`+body+`"}`, 201)
 	if saved["status"] != "generated" || saved["sent"] == true {

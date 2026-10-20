@@ -1,0 +1,53 @@
+[
+  {
+    "step": "today_loaded",
+    "hasAttention": true,
+    "hasReason": true,
+    "hasConversation": true,
+    "hasDraft": true,
+    "hasNavFault": true,
+    "hasEcoNav": false
+  },
+  {
+    "step": "keyboard_open",
+    "focusedLabel": "展开会话与回复",
+    "expanded": "true"
+  },
+  {
+    "step": "conversation_open",
+    "panel": "rcs_bce7ec993058e8db092c225f5d9b1969",
+    "hasThread": true,
+    "state": "ready"
+  },
+  {
+    "step": "takeover_ok",
+    "notice": "已转人工接管"
+  },
+  {
+    "step": "sent_verified",
+    "reply": "已确认：今天下午可以到店，营业到 18:00。",
+    "hasReply": true,
+    "hasSentStatus": true
+  },
+  {
+    "step": "leads_list",
+    "hasSalesOwner": true,
+    "hasRawMemberId": false,
+    "hasPending": true,
+    "hasTouchSource": true,
+    "hasContactName": true
+  },
+  {
+    "step": "final",
+    "url": "http://127.0.0.1:29330/"
+  },
+  {
+    "step": "tally",
+    "viewport": "1440x900",
+    "clicks": 3,
+    "fills": 1,
+    "consoleErrorCount": 0,
+    "console404Count": 0,
+    "consoleErrors": []
+  }
+]
