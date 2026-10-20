@@ -268,13 +268,26 @@ TENANT=... PLAYWRIGHT_CORE=<playwright-core> WALK_TENANT=$TENANT \
 
 ---
 
-## 9. 文件与提交
+## 9. 集成（本地）
+
+- 集成分支：`mb/eco-20261021`（从 `main` @ `ef48624` 创建）。
+- 锁：`/Volumes/MacintoshHD/派诺生态/.locks/leads-engine.integrate.lock`（`mkdir` 原子占锁，trap 释放）。
+- 合并：`git merge --no-ff eco/hui-2626-leads-shell` → `825508b5bf9cd3a68ce8f94c757b004e96f44f1d`；尾行清理再合并 → **`a0f5ddf33c2016fad883bcf50f63684b0444b040`**。
+- 集成分支门（`repos/leads-engine/web` 先 `npm ci`；主 checkout 原先没有 node_modules）：
+  - Go：27 包 `ok`，退出 0（`825508b`）；
+  - Web：**423/423 通过**（`a0f5ddf`，`/tmp/leads-hui2626/integrate-vitest3.log`）；
+  - Build：退出 0（`a0f5ddf`，`/tmp/leads-hui2626/integrate-build3.log`）。
+- 完成后 `git checkout main`，主 checkout 回到 `ef48624`；工作树保留，未 push/deploy。
+- 说明：`a0f5ddf` 相对 `825508b` 仅 `web/src/lib/finish.ts` 尾行删除；Go 结果沿用 `825508b`，Web/build 在 `a0f5ddf` 重跑。
+
+## 10. 文件与提交
 
 `git log --oneline main..HEAD`：
 
 ```
+145e313 style(hui-2598): 去掉文件尾空行
+d3b6ff0 fix(hui-2598): 接待台负责人显示名与人工作者标签
 f3a5600 fix(hui-2227): 导航请求票号与 launch 业务载荷隔离（双轴审查）
-（本轮后续提交：接待台 owner_label、证据包）
 5dbc73d fix(hui-2598): 同租户刷新不卸载会话面板，负责人文案去重
 c318b62 fix(hui-2626): 今日行标题/最近互动人化、回复草稿保留与 390 chips 布局
 d6ecdf8 fix(hui-2598): 同一会话在今日只占一行，草稿随会话展示
