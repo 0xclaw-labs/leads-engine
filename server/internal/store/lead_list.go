@@ -102,11 +102,11 @@ func assignmentReason(label, memberID string, enabled bool) string {
 	if memberID == "" {
 		return "待分配"
 	}
-	if label == "" {
-		return "已分配给未命名成员"
-	}
 	if !enabled {
 		return "负责人已停用"
+	}
+	if label == "" {
+		return "已分配给未命名成员"
 	}
 	return "已分配给 " + label
 }

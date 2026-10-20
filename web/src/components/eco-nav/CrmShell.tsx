@@ -5,7 +5,7 @@
 // 会话/租户先由 whoami 对账；导航模型随后经本站 BFF（/api/eco-nav）由服务端
 // 目录产出。缺配置、未登录、服务不可达都不回退预览 fixture：宁可不渲染导航，
 // 也不把预览租户画成真实上下文。
-import React, { useCallback, useEffect, useState, type ReactNode } from "react";
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { EcoTopNav } from "@/components/eco-nav/EcoTopNav";
 import { ShellWidthProvider, SurfaceState, WorkbenchChrome, useShellWidth } from "@/components/workbench/chrome";
 import { OfflineReady } from "@/components/workbench/offlineReady";
@@ -70,6 +70,7 @@ export function CrmShell({
   const [launchError, setLaunchError] = useState("");
   const [launchBusy, setLaunchBusy] = useState(false);
   const [navReload, setNavReload] = useState(0);
+  const navTicket = useRef({ seq: 0, tenant: "" });
 
   useEffect(() => {
     hydrateCrmTenantFromStorage();
@@ -100,10 +101,13 @@ export function CrmShell({
   }, []);
 
   const loadNav = useCallback(async (tenant: string) => {
+    const ticket = { seq: navTicket.current.seq + 1, tenant };
+    navTicket.current = ticket;
     const headers: Record<string, string> = { accept: "application/json", "x-tenant-id": tenant };
     try {
       const res = await fetch("/api/eco-nav", { headers, cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as { model?: unknown; message?: string };
+      if (navTicket.current !== ticket) return;
       const parsed = parseEcoNavView(body.model);
       if (!parsed) {
         setNavModel(blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航契约不兼容，已停止渲染。"));
@@ -118,6 +122,7 @@ export function CrmShell({
       }
       setNavFault(parsed.renderable || parsed.status.state === "hidden" || parsed.status.state === "denied" ? "" : parsed.status.summary || "生态导航暂不可用");
     } catch {
+      if (navTicket.current !== ticket) return;
       setNavModel(blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航服务暂不可达。"));
       setNavFault("生态导航服务暂不可达");
     }
@@ -183,10 +188,7 @@ export function CrmShell({
             onReturn={(sourceAppId, targetId) => void launch(sourceAppId, targetId)}
             onTenantSwitch={(tenant) => {
               const chosen = guardTenantCommit(switcher, tenant);
-              if (chosen) {
-                commitCrmTenant(chosen);
-                void loadNav(chosen);
-              }
+              if (chosen) commitCrmTenant(chosen);
             }}
           />
         ) : null}

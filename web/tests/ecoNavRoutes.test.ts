@@ -122,6 +122,34 @@ describe("POST /api/eco-nav/launch", () => {
     expect(res.headers.get("location")).toBe("https://goboost.modelxing.com/launch?code=c&h=h");
   });
 
+  it("drops business payload: only app + target reach identity", async () => {
+    const { calls } = installFetch();
+    const res = await postLaunch(
+      new Request("http://localhost/api/eco-nav/launch", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json", cookie: "leads_session=tok", "x-tenant-id": "tnt_a" },
+        body: JSON.stringify({
+          app_id: "goboost",
+          launch_target_id: "ti-goboost-web",
+          lead_id: "lead_should_not_travel",
+          payer: "personal",
+          tenant_id: "tnt_other",
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const identityCall = calls.find((call) => call.url.includes("/internal/v1/identity/shell/launch"));
+    const body = JSON.parse(String(identityCall?.init.body)) as Record<string, unknown>;
+    expect(body).toEqual({
+      principal_id: "usr_owner",
+      tenant_id: "tnt_a",
+      app_id: "goboost",
+      target_id: "ti-goboost-web",
+    });
+    expect(JSON.stringify(body)).not.toContain("lead_should_not_travel");
+    expect(JSON.stringify(body)).not.toContain("payer");
+  });
+
   it("rejects a malformed body without calling services", async () => {
     const { calls } = installFetch();
     const res = await postLaunch(

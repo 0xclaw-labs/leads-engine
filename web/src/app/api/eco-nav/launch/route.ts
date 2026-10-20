@@ -23,8 +23,12 @@ export async function POST(req: Request): Promise<Response> {
       detail: config.problems,
     });
   }
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > MAX_BODY) {
+    return json(413, { error: "invalid_request", message: "请求体过大。" });
+  }
   const text = await req.text();
-  if (text.length > MAX_BODY) return json(400, { error: "invalid_request", message: "请求体过大。" });
+  if (text.length > MAX_BODY) return json(413, { error: "invalid_request", message: "请求体过大。" });
   let input: { app_id?: unknown; launch_target_id?: unknown };
   try {
     input = JSON.parse(text || "{}") as typeof input;
