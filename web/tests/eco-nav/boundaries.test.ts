@@ -33,7 +33,23 @@ describe("EcoTopNav boundaries", () => {
     for (const file of files) {
       const text = source(file);
       expect(text).not.toMatch(/[a-z0-9-]+\.(example|huigoo|invalid)\b/);
-      expect(text).not.toMatch(/launch_url/);
+      // HUI-2227：launch_url 只能出现在 BFF 规划器与“接收后跳转”的壳层；
+      // 导航渲染/模型/夹具不得自己拼 URL。
+      if (file.endsWith("EcoTopNav.tsx") || file.endsWith("model.ts") || file.endsWith("fixture.ts") || file.endsWith("load.ts")) {
+        expect(text).not.toMatch(/launch_url/);
+      }
+      expect(text).not.toMatch(/https?:\/\//);
     }
+  });
+
+  it("launches only through the own BFF with app/target pair", () => {
+    const shell = source("src/components/eco-nav/CrmShell.tsx");
+    expect(shell).toContain("/api/eco-nav/launch");
+    expect(shell).toContain("launch_target_id");
+    expect(shell).not.toMatch(/https?:\/\//);
+    const plan = source("src/lib/eco-nav/launch.ts");
+    expect(plan).toContain("/internal/v1/identity/shell/launch");
+    expect(plan).toContain("LEADS_ECO_LAUNCH_HOSTS");
+    expect(plan).not.toMatch(/[a-z0-9-]+\.(example|huigoo|invalid)\b/);
   });
 });

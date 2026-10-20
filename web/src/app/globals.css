@@ -818,3 +818,17 @@ textarea {
   border-radius: var(--pn-radius-control, 8px);
   padding: var(--pn-spacing-2, 8px) var(--pn-spacing-3, 12px);
 }
+
+/* HUI-2227：导航不可用时的可恢复条（不渲染任何品牌/应用/租户数据）。 */
+.eco-nav-fault {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-spacing-2, 8px);
+  padding: var(--pn-spacing-2, 8px) var(--pn-spacing-4, 16px);
+  background: var(--pn-status-warning-weak, var(--bg));
+  color: var(--pn-status-warning-fg, var(--warn));
+  border-bottom: 1px solid var(--pn-border-default, var(--line));
+  font-size: var(--pn-type-caption-size, 0.85rem);
+}
