@@ -144,6 +144,9 @@ type DraftView struct {
 	Kind       string
 	Status     string
 	Body       string
+	// CreatedAt orders competing drafts of one session. Only the latest
+	// generated draft represents that conversation on the today desk.
+	CreatedAt string
 }
 
 // ConfirmedContext is what this customer already established.
@@ -1136,6 +1139,23 @@ func projectToday(scope Scope, now time.Time, leads []LeadView, opps []Opportuni
 		}
 		today[TodayDue] = append(today[TodayDue], item)
 	}
+	// HUI-2598 D8：同一会话只占今天一行。
+	// awaiting_approval 的会话本来就进 human_takeover；它的 draft 再进 ai_draft
+	// 会让同一段对话出现多次、计数也虚高。最新一条草稿随会话行展示，其它草稿
+	// 只在会话面板里出现。
+	latestDraft := map[string]DraftView{}
+	for _, draft := range drafts {
+		if draft.Status != "generated" || (draft.Kind != "ai" && draft.Kind != "draft") || draft.SessionID == "" {
+			continue
+		}
+		if !InScope(scope, draft.Assignee) {
+			continue
+		}
+		if cur, ok := latestDraft[draft.SessionID]; !ok || draft.CreatedAt >= cur.CreatedAt {
+			latestDraft[draft.SessionID] = draft
+		}
+	}
+	placedSession := map[string]bool{}
 	for _, session := range desk {
 		if !InScope(scope, session.Assignee) {
 			continue
@@ -1143,18 +1163,22 @@ func projectToday(scope Scope, now time.Time, leads []LeadView, opps []Opportuni
 		if session.HumanTodo {
 			item := sessionItem(session, TodayHuman)
 			item.TodayGroup = TodayHuman
+			item = withLatestDraft(item, latestDraft[session.SessionID])
 			if lead, ok := findLead(leads, session.LeadID); ok && InScope(scope, lead.Assignee) {
 				item = copyLeadFacts(item, lead, opps)
 			}
+			placedSession[session.SessionID] = true
 			today[TodayHuman] = append(today[TodayHuman], ensureSessionContext(item, session))
 			continue
 		}
 		if session.WaitingReply {
 			item := sessionItem(session, TodayWaiting)
 			item.TodayGroup = TodayWaiting
+			item = withLatestDraft(item, latestDraft[session.SessionID])
 			if lead, ok := findLead(leads, session.LeadID); ok && InScope(scope, lead.Assignee) {
 				item = copyLeadFacts(item, lead, opps)
 			}
+			placedSession[session.SessionID] = true
 			today[TodayWaiting] = append(today[TodayWaiting], ensureSessionContext(item, session))
 		}
 	}
@@ -1162,7 +1186,7 @@ func projectToday(scope Scope, now time.Time, leads []LeadView, opps []Opportuni
 		if draft.Status != "generated" || (draft.Kind != "ai" && draft.Kind != "draft") {
 			continue
 		}
-		if !InScope(scope, draft.Assignee) {
+		if !InScope(scope, draft.Assignee) || placedSession[draft.SessionID] {
 			continue
 		}
 		item := draftItem(draft)
@@ -1172,6 +1196,17 @@ func projectToday(scope Scope, now time.Time, leads []LeadView, opps []Opportuni
 		today[TodayAIDraft] = append(today[TodayAIDraft], item)
 	}
 	return today
+}
+
+// withLatestDraft puts the conversation's newest generated draft on the
+// session item so "本行即可判断" holds without a second today row.
+func withLatestDraft(item Item, draft DraftView) Item {
+	if draft.ID == "" {
+		return item
+	}
+	item.DraftBody = draft.Body
+	item.Basis = "会话有待确认的草稿；保存不等于发送"
+	return item
 }
 
 func findLead(leads []LeadView, id string) (LeadView, bool) {
