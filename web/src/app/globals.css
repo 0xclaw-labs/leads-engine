@@ -670,3 +670,151 @@ textarea {
 .pn-r-drawer-viewport {
   top: 56px;
 }
+
+/* HUI-2626：今日工作台的注意力条 / 分组 / 行内会话。
+   只消费 work.light 语义 token；括号里是公开表单（renderer scope 外）的回退。 */
+.attention-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--pn-spacing-2, 8px) var(--pn-spacing-3, 12px);
+  background: var(--pn-bg-surface, var(--surface));
+  border: 1px solid var(--pn-border-default, var(--line));
+  border-radius: var(--pn-radius-card, 12px);
+  padding: var(--pn-spacing-3, 12px) var(--pn-spacing-4, 16px);
+  margin-bottom: var(--pn-spacing-4, 16px);
+}
+
+.attention-strip ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-spacing-2, 8px);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.attention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-spacing-2, 8px);
+  border: 1px solid var(--pn-border-default, var(--line));
+  border-radius: var(--pn-radius-pill, 999px);
+  padding: var(--pn-spacing-1, 4px) var(--pn-spacing-3, 12px);
+  color: var(--pn-text-primary, var(--fg));
+  background: var(--pn-bg-sunken, var(--bg));
+  text-decoration: none;
+  font-size: var(--pn-type-caption-size, 0.85rem);
+  white-space: nowrap;
+}
+
+.attention-chip strong {
+  color: var(--pn-brand-text, var(--accent));
+}
+
+.attention-chip:hover,
+.attention-chip:focus-visible {
+  border-color: var(--pn-border-focus, var(--accent));
+  outline: var(--pn-focus-width, 2px) solid var(--pn-focus-color, var(--accent));
+  outline-offset: var(--pn-focus-offset, 2px);
+}
+
+.work-rationale {
+  flex-basis: 100%;
+  border-top: 1px solid var(--pn-border-default, var(--line));
+  padding-top: var(--pn-spacing-2, 8px);
+}
+
+.work-rationale summary {
+  cursor: pointer;
+  color: var(--pn-text-muted, var(--muted));
+  font-size: var(--pn-type-caption-size, 0.85rem);
+}
+
+.work-rationale p {
+  margin: var(--pn-spacing-2, 8px) 0;
+}
+
+.today-group {
+  margin-bottom: var(--pn-spacing-6, 24px);
+}
+
+.today-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--pn-spacing-2, 8px) var(--pn-spacing-3, 12px);
+  margin-bottom: var(--pn-spacing-2, 8px);
+}
+
+.today-group-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-spacing-2, 8px);
+  margin: 0;
+  font-size: var(--pn-type-label-size, 1rem);
+}
+
+.today-count {
+  display: inline-flex;
+  min-width: 1.5rem;
+  justify-content: center;
+  border-radius: var(--pn-radius-pill, 999px);
+  background: var(--pn-brand-weak, var(--bg));
+  color: var(--pn-brand-text, var(--accent));
+  font-size: var(--pn-type-caption-size, 0.8rem);
+  padding: 0 var(--pn-spacing-2, 8px);
+}
+
+.conversation-panel {
+  border-top: 1px solid var(--pn-border-default, var(--line));
+  margin-top: var(--pn-spacing-3, 12px);
+  padding-top: var(--pn-spacing-3, 12px);
+}
+
+.conversation-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--pn-spacing-1, 4px) var(--pn-spacing-3, 12px);
+}
+
+.conversation-head h3 {
+  margin: 0;
+  font-size: var(--pn-type-label-size, 0.95rem);
+}
+
+.conversation-thread {
+  list-style: none;
+  margin: var(--pn-spacing-2, 8px) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-spacing-2, 8px);
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.conversation-turn {
+  border: 1px solid var(--pn-border-default, var(--line));
+  border-radius: var(--pn-radius-control, 8px);
+  background: var(--pn-bg-sunken, var(--bg));
+  padding: var(--pn-spacing-2, 8px) var(--pn-spacing-3, 12px);
+}
+
+.conversation-turn p {
+  margin: 0;
+}
+
+.conversation-compose {
+  margin-top: var(--pn-spacing-3, 12px);
+}
+
+.inline-note {
+  border: 1px solid var(--pn-status-info-solid, var(--accent));
+  background: var(--pn-status-info-weak, var(--bg));
+  color: var(--pn-status-info-fg, var(--fg));
+  border-radius: var(--pn-radius-control, 8px);
+  padding: var(--pn-spacing-2, 8px) var(--pn-spacing-3, 12px);
+}
