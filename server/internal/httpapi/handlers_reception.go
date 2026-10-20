@@ -262,6 +262,15 @@ func (s *Server) handleReceptionDesk(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []store.DeskItem{}
 	}
+	// HUI-2598：负责人显示名由服务端补；前端不得把 mem_* 当人名。
+	for i := range items {
+		if items[i].OwnerMemberID == "" {
+			continue
+		}
+		if m, err := s.St.GetMember(items[i].OwnerMemberID); err == nil {
+			items[i].OwnerLabel = m.DisplayName
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -300,11 +309,18 @@ func (s *Server) handleReceptionSessionGet(w http.ResponseWriter, r *http.Reques
 		fail(w, http.StatusInternalServerError, "internal", "replies failed")
 		return
 	}
+	ownerLabel := ""
+	if sess.OwnerMemberID != "" {
+		if m, err := s.St.GetMember(sess.OwnerMemberID); err == nil {
+			ownerLabel = m.DisplayName
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"session":  sess,
-		"messages": messageViews(msgs),
-		"replies":  replyViews(replies),
-		"model":    s.modelPayloadForSession(sess.TenantID, sess.ID),
+		"session":     sess,
+		"owner_label": ownerLabel,
+		"messages":    messageViews(msgs),
+		"replies":     replyViews(replies),
+		"model":       s.modelPayloadForSession(sess.TenantID, sess.ID),
 	})
 }
 

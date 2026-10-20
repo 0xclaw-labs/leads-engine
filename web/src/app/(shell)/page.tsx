@@ -1,10 +1,14 @@
 "use client";
 
 // 获客唯一首页：today-next。HUI-2626 只换这一页的视觉外壳，不要另做首页。
+// HUI-2626 / HUI-2598：首页先回答“今天先处理谁”，并在同一行展开
+// 来源 → 会话 → 回复 → 下一步。会话/回复仍走服务端既有链路，不是第二套存储。
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+// 默认导入供 vitest/esbuild 的 classic JSX 转换使用（Next SWC automatic runtime 不受影响）。
+import React, { useEffect, useRef, useState } from "react";
 import { RecordFrame, SurfaceState, ToneBadge, useShellWidth } from "@/components/workbench/chrome";
+import { ConversationPanel } from "@/components/workbench/conversationPanel";
 import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
@@ -26,12 +30,11 @@ import {
   followNote,
   persistTodayMemory,
   questionsFor,
-  receptionOpenHref,
+  receptionFactLine,
   recallToday,
   searchToken,
   readTodayMemory,
   reviseBody,
-  receptionFactLine,
   rememberToday,
   todaySaveReady,
   renderLeadFacts,
@@ -39,12 +42,14 @@ import {
   serviceDraftClick,
   serviceDraftControl,
   visibleOutreach,
+  attributionText,
+  interactionText,
   type DeskItem,
   type MoneyFacts,
   type TodayDraft,
   type TodayGroup,
-  type TodayMemory,
 } from "@/lib/workbench";
+import { attentionSummary, rowReason, todayDestination, todayRowTitle } from "@/lib/todayWorkspace";
 
 interface JointChain {
   status?: string;
@@ -74,6 +79,16 @@ const DISPOSITION_CHOICES = [
   { value: "waiting_customer", label: "等待客户" },
 ] as const;
 
+const GROUP_HINT: Record<TodayGroup, string> = {
+  new_inquiry: "新线索会先留在这里；打开会话或记一次跟进后再分组。",
+  due_today: "约在今天跟进的联系人会出现在这里。",
+  waiting_customer: "等待客户回复的会话和线索留在这里，不催办。",
+  overdue: "过了约定时间还没有下一步的，会出现在这里。",
+  ai_draft: "需要人工确认的 AI 草稿会出现在这里；不会自动发送。",
+  human_takeover: "已经转人工或需要接管的会话会出现在这里。",
+  info_or_permission: "缺负责人、被过滤或授权不足的线索会出现在这里，先补事实。",
+};
+
 function emptyDraft(): TodayDraft {
   return { note: "", nextAt: "", disposition: "next", changed: [] };
 }
@@ -91,13 +106,16 @@ export default function Home() {
   const [draftMsg, setDraftMsg] = useState("");
   const [focusId, setFocusId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, TodayDraft>>({});
+  const [conversationFor, setConversationFor] = useState("");
   const appliedTenant = useRef<string | null>(null);
+  const shownTenant = useRef<string | null>(null);
 
   useEffect(() => {
     const restored = recallToday(readTodayMemory(), scope.tenant);
     const focus = searchToken(new URLSearchParams(window.location.search).get("focus"));
     setDrafts(restored.drafts);
     setFocusId(focus || restored.focusId);
+    setConversationFor("");
     appliedTenant.current = null;
   }, [scope.tenant]);
 
@@ -109,11 +127,20 @@ export default function Home() {
     persistTodayMemory(rememberToday(readTodayMemory(), scope.tenant ?? "", focusId, drafts));
   }, [scope.tenant, focusId, drafts]);
 
+  // HUI-2598 D4：只有换工作范围才清空列表。行内回复/接管后的 reload 若把
+  // groups 置空，会卸载会话面板并丢掉刚写好的输入与提示；刷新应保留旧数据，
+  // 新数据到达后原地替换。
   useEffect(() => {
+    if (shownTenant.current === scope.tenant) return;
+    shownTenant.current = scope.tenant;
     setLoadedFor(null);
     setGroups(null);
     setMoney(EMPTY_MONEY);
     setJointChain(null);
+    setConversationFor("");
+  }, [scope.tenant]);
+
+  useEffect(() => {
     const headers = listTenantHeader(scope.tenant);
     if (!headers) {
       setErr("");
@@ -151,6 +178,7 @@ export default function Home() {
 
   const visible = loadedFor === (scope.tenant ?? "") ? groups : null;
   const lines = moneyView(visible ? money : EMPTY_MONEY);
+  const attention = attentionSummary(visible);
   const primaryId = focusId || (visible ? TODAY_GROUPS.flatMap((key) => visible[key]).find((item) => item.lead_id)?.id ?? "" : "");
 
   useEffect(() => {
@@ -198,32 +226,6 @@ export default function Home() {
     setReload((n) => n + 1);
   }
 
-  async function saveSessionDraft(item: DeskItem) {
-    const headers = listTenantHeader(scope.tenant);
-    if (!headers || !item.session_id) return;
-    const body = (draftFor(item.id).draftBody ?? "").trim();
-    if (!body) return;
-    setDraftMsg("");
-    const out = await postJson<{ sent?: boolean; continue?: { focus_id?: string }; message?: string; error?: string }>(
-      `/api/workbench/sessions/${item.session_id}/reply-draft`,
-      { "content-type": "application/json", ...headers },
-      { client_reply_id: `desk${Date.now()}`, body },
-    );
-    if (!out.ok || out.body.sent === true) {
-      setDraftMsg(!out.ok ? failureText(out.body, out.status) : "草稿没有只保存");
-      return;
-    }
-    const focus = searchToken(out.body.continue?.focus_id ?? "");
-    if (focus) setFocusId(focus);
-    setDrafts((current) => {
-      const next = { ...current };
-      delete next[item.id];
-      return next;
-    });
-    setDraftMsg("草稿已保存在服务端，尚未发送");
-    setReload((n) => n + 1);
-  }
-
   async function reviseDraft(item: DeskItem) {
     const headers = listTenantHeader(scope.tenant);
     if (!headers) return;
@@ -251,37 +253,58 @@ export default function Home() {
   }
 
   return (
-    <main data-today-home={HOME_SURFACE} data-page="today">
-      <header className="page-head">
+    <main data-today-home={HOME_SURFACE} data-page="today" data-pattern="workspace">
+      <header className="page-head" data-region="header">
         <h1>今天要完成的客户工作</h1>
+        <p className="muted">
+          {scopeLabel ? `当前视图：${scopeLabel}。` : ""}
+          {billingCaption()}
+        </p>
       </header>
-      <div className="card">
-        <p>
-          <ToneBadge tone="human" /> {scopeLabel ? `当前视图：${scopeLabel}。` : ""}
-          {billingCaption()}。
-        </p>
-        <p data-tone="automation">
-          <ToneBadge tone="automation" /> 手工安排的下一步优先。这里不会自动外呼、发消息或创建订单。
-        </p>
-        <p data-tone="ai">
-          <ToneBadge tone="ai" /> {modelAdviceLine()}。意向分级只给下一步建议，不自动触达。
-        </p>
-        <p data-joint-chain="incomplete">{jointChainLine(jointChain)}</p>
-      </div>
-      {draftMsg ? <p className="muted">{draftMsg}</p> : null}
-      <div className="card">
-        <h2>金额分开看</h2>
-        <ul className="money-lines">
-          {lines.lines.map((line) => (
-            <li key={line.key}>
-              {line.label}：{centsText(line.cents)}
-            </li>
-          ))}
-        </ul>
-      </div>
+
+      {draftMsg ? <p className="muted" role="status">{draftMsg}</p> : null}
+
+      <section className="attention-strip" data-region="status" aria-label="今天的注意力">
+        {visible && !attention.empty ? (
+          <ul>
+            {attention.rows.map((row) => (
+              <li key={row.group}>
+                <a className="attention-chip" href={row.href} data-attention-group={row.group}>
+                  {row.label}
+                  <strong>{row.count}</strong>
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">{visible ? "今天没有需要处理的客户工作。" : "正在整理今天的工作。"}</p>
+        )}
+        <details className="work-rationale">
+          <summary>排序与金额口径</summary>
+          <p>
+            <ToneBadge tone="human" /> 顺序：新咨询 → 今天应跟进 → 等待客户 → 逾期 → AI 草稿 → 人工接管 → 信息或权限。
+            手工安排的下一步优先。
+          </p>
+          <p data-tone="automation">
+            <ToneBadge tone="automation" /> 这里不会自动外呼、发消息或创建订单。
+          </p>
+          <p data-tone="ai">
+            <ToneBadge tone="ai" /> {modelAdviceLine()}。意向分级只给下一步建议，不自动触达。
+          </p>
+          <p data-joint-chain="incomplete">{jointChainLine(jointChain)}</p>
+          <ul className="money-lines">
+            {lines.lines.map((line) => (
+              <li key={line.key}>
+                {line.label}：{centsText(line.cents)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      </section>
+
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       {scope.tenant && err ? (
-        <div data-state="error">
+        <div data-state="error" data-region="error">
           <SurfaceState
             kind="error"
             title="今天的工作没有载入"
@@ -295,42 +318,57 @@ export default function Home() {
         </div>
       ) : null}
       {scope.tenant && !err && visible === null ? (
-        <div data-state="loading">
+        <div data-state="loading" data-region="loading">
           <SurfaceState kind="loading" title="正在整理今天的工作" detail="分组和金额马上就位。" />
         </div>
       ) : null}
-      {scope.tenant && !err && visible
-        ? TODAY_GROUPS.map((key) => (
-          <section className="card" key={key}>
-            <h2>
-              {TODAY_LABELS[key]}（{visible[key].length}）
-            </h2>
-            {visible[key].length === 0 ? (
-              <div data-state="empty">
-                <SurfaceState kind="empty" title="没有待办" detail={`${TODAY_LABELS[key]}这一组是空的。`} />
-              </div>
-            ) : (
+      {scope.tenant && !err && visible && attention.empty ? (
+        <div data-state="empty" data-region="empty">
+          <SurfaceState
+            kind="empty"
+            title="今天没有需要处理的客户工作"
+            detail="新的咨询、到期的跟进、未回复的会话和待确认的草稿会按顺序出现在这里。先去线索或接待看看也可以。"
+            action={<Link className="btn" href="/leads">打开线索列表</Link>}
+          />
+        </div>
+      ) : null}
+      {scope.tenant && !err && visible && !attention.empty
+        ? TODAY_GROUPS.map((key) => {
+          const rows = visible[key];
+          if (rows.length === 0) return null;
+          return (
+            <section className="today-group" key={key} id={`today-group-${key}`} data-today-group={key} data-region="body">
+              <header className="today-group-head">
+                <h2>
+                  {TODAY_LABELS[key]}
+                  <span className="today-count">{rows.length}</span>
+                </h2>
+                <p className="muted">{GROUP_HINT[key]}</p>
+              </header>
               <ul className="desk-list">
-                {visible[key].map((item) => (
+                {rows.map((item) => (
                   <TodayRow
                     key={`${key}-${item.id}`}
                     width={width}
+                    group={key}
                     primaryRow={item.id === primaryId}
                     item={item}
                     jointChain={jointChain}
                     draft={draftFor(item.id)}
+                    conversationOpen={conversationFor === item.id}
+                    onToggleConversation={() => setConversationFor((current) => (current === item.id ? "" : item.id))}
+                    onConversationChanged={() => setReload((n) => n + 1)}
                     onDraft={(patch) => updateDraft(item.id, patch)}
                     onFollow={(mode) => void submitFollow(item, mode)}
                     onRevise={() => void reviseDraft(item)}
                     onIgnore={() => void ignoreDraft(item)}
-                    onSaveDraft={() => void saveSessionDraft(item)}
                     onService={() => setDraftMsg(serviceDraftClick().message)}
                   />
                 ))}
               </ul>
-            )}
-          </section>
-        ))
+            </section>
+          );
+        })
         : null}
       {/* HUI-2626 盲评 P3：foot-nav 让每个链接整体换行，390 不再从词中间折断。 */}
       <p className="muted foot-nav">
@@ -344,27 +382,33 @@ export default function Home() {
 
 function TodayRow({
   width,
+  group,
   primaryRow,
   item,
   jointChain,
   draft,
+  conversationOpen,
+  onToggleConversation,
+  onConversationChanged,
   onDraft,
   onFollow,
   onRevise,
   onIgnore,
-  onSaveDraft,
   onService,
 }: {
   width: number;
+  group: TodayGroup;
   primaryRow: boolean;
   item: DeskItem;
   jointChain: JointChain | null;
   draft: TodayDraft;
+  conversationOpen: boolean;
+  onToggleConversation: () => void;
+  onConversationChanged: () => void;
   onDraft: (patch: Partial<TodayDraft>) => void;
   onFollow: (mode: "note" | "schedule") => void;
   onRevise: () => void;
   onIgnore: () => void;
-  onSaveDraft: () => void;
   onService: () => void;
 }) {
   const facts = renderLeadFacts(item, jointChain);
@@ -377,21 +421,24 @@ function TodayRow({
     kind: item.kind,
     auto: item.next?.auto_call === true || item.next?.auto_message === true || item.next?.create_order === true,
   });
+  const destination = todayDestination(item);
+  const sourceLine = attributionText(item.source);
   const factRows = [
+    { label: "为什么在今天", value: rowReason(item, group) },
     ...(receptionLine ? [{ label: "接待", value: receptionLine }] : []),
-    { label: "来源", value: facts.source },
+    { label: "来源", value: sourceLine },
     { label: "已确认", value: `${item.context?.customer || "客户未记录"}${item.context?.business ? ` · ${item.context.business}` : ""}${confirmed.length ? ` · ${confirmed.join("、")}` : ""}` },
-    { label: "负责人", value: facts.owner },
+    { label: "负责人", value: item.owner_label || (item.session_id ? "尚未接管" : facts.owner) },
     { label: "状态", value: `状态：${facts.state}` },
     { label: "允许的联系方式", value: allowedContactText(item.allowed_contacts) },
-    { label: "最近一次互动", value: `${item.last_interaction?.summary || "还没有互动"}${item.last_interaction?.at ? ` · ${item.last_interaction.at}` : ""}` },
+    { label: "最近一次互动", value: interactionText(item.last_interaction) },
     { label: "下一步", value: facts.next },
     { label: "依据", value: item.basis || modelAdviceLine() },
     { label: "同步", value: facts.sync },
     ...(outreach ? [{ label: "触达", value: outreach }] : []),
     ...(item.reason && item.kind !== "reception" ? [{ label: "原因", value: item.reason }] : []),
     ...(questions.length > 0 ? [{ label: "待补充", value: questions.join("、") }] : []),
-    ...(item.kind === "ai_draft" ? [{ label: "草稿", value: item.draft_body || "未记录" }] : []),
+    ...(item.draft_body ? [{ label: "草稿", value: item.draft_body }] : []),
   ];
   const followDisabled = !draft.note.trim();
   const primaryFollow = (
@@ -421,20 +468,21 @@ function TodayRow({
     </Button>
   );
   return (
-    <li id={`today-item-${item.id}`}>
-      <RecordFrame width={width} tone={tone} title={item.context?.customer || facts.next} facts={factRows} primary={primaryRow && item.lead_id ? primaryFollow : undefined}>
+    <li id={`today-item-${item.id}`} data-today-kind={item.kind}>
+      <RecordFrame width={width} tone={tone} title={todayRowTitle(item, group)} facts={factRows} primary={primaryRow && item.lead_id ? primaryFollow : undefined}>
         {item.kind === "reception" ? <p data-reception-fact="owner">{receptionLine}</p> : null}
         <p data-joint-chain="incomplete">{facts.chain}</p>
         <div className="queue-actions">
-          {/* HUI-2626 fix2（gate-r2 #6 主行动收敛）：行内导航至多一个——接待行→接待，线索行→线索，其余→商机。 */}
-          {item.kind === "reception" && item.session_id ? (
-            <Link className="btn" href={receptionOpenHref(item.session_id, item.id)}>打开这个会话</Link>
-          ) : item.lead_id ? (
-            <Link className="btn" href={`/leads/${item.lead_id}`} data-desk-action={NARROW_ACTIONS[0]}>{NARROW_ACTIONS[0]}</Link>
-          ) : item.session_id ? (
-            <Link className="btn" href={receptionOpenHref(item.session_id, item.id)}>打开这个会话</Link>
-          ) : item.opportunity_id ? (
-            <Link className="btn" href={`/opportunities/${item.opportunity_id}`}>打开商机</Link>
+          {item.session_id ? (
+            <Button variant="secondary" type="button" size="sm" data-conversation-toggle={item.session_id} aria-expanded={conversationOpen} onClick={onToggleConversation}>
+              {conversationOpen ? "收起会话" : "展开会话与回复"}
+            </Button>
+          ) : null}
+          {/* HUI-2626 行内导航至多一个：展开会话是控件，真正跳转只留一条。 */}
+          {destination ? (
+            <Link className="btn" href={destination.href} data-desk-action={destination.kind === "conversation" ? undefined : NARROW_ACTIONS[0]}>
+              {destination.kind === "conversation" ? "在接待台打开" : destination.label}
+            </Link>
           ) : null}
           {service.present ? (
             <Button variant="secondary" type="button" size="sm" disabled={!service.enabled} onClick={onService}>
@@ -443,6 +491,14 @@ function TodayRow({
           ) : null}
         </div>
         {service.present && !service.enabled ? <p className="muted">{service.reason}</p> : null}
+        {conversationOpen && item.session_id ? (
+          <ConversationPanel
+            sessionId={item.session_id}
+            focusId={item.id}
+            initialEpoch={item.reception?.epoch}
+            onChanged={onConversationChanged}
+          />
+        ) : null}
         {item.lead_id ? (
           <div className="stack-form">
             {/* HUI-2626 fix2（gate-r2 #1/#9 同批）：提交语义收敛到显式按钮（主行动至多一个），控件走 vendored/标准件。 */}
@@ -468,21 +524,6 @@ function TodayRow({
             </div>
           </div>
         ) : null}
-        {item.kind === "reception" && item.session_id ? (
-          <div className="stack-form">
-            <Textarea
-              label="回复草稿"
-              value={draft.draftBody ?? ""}
-              onChange={(e) => onDraft({ draftBody: e.target.value })}
-              placeholder="先写给这位客户的回复，保存后不会发送"
-            />
-            <div className="queue-actions">
-              <Button variant="secondary" type="button" size="sm" disabled={!(draft.draftBody ?? "").trim()} onClick={onSaveDraft}>
-                保存草稿
-              </Button>
-            </div>
-          </div>
-        ) : null}
         {item.kind === "ai_draft" ? (
           <div className="stack-form">
             <Textarea
@@ -497,6 +538,9 @@ function TodayRow({
             </div>
           </div>
         ) : null}
+        <p className="muted">
+          下一步只记录在服务端；离开页面不会把未保存的输入当成已发送。
+        </p>
       </RecordFrame>
     </li>
   );

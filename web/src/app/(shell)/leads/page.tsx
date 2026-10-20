@@ -22,13 +22,12 @@ interface LeadRow {
   status: string;
   assigned_member_id?: string;
   created_by?: string;
-}
-
-interface ContactRow {
-  id: string;
-  name: string;
-  source_type: string;
-  phone?: string;
+  // HUI-2598 D1/D6：服务端列表投影。姓名/来源/负责人一次返回，页面不再二次拉联系人。
+  contact_name?: string;
+  source_type?: string;
+  owner_label?: string;
+  assignment_reason?: string;
+  source?: { form?: string; activity?: string; channel?: string; at?: string; source_app?: string };
 }
 
 interface TimelineEvent {
@@ -69,7 +68,7 @@ const EVENT_KIND: Record<string, string> = {
 export default function LeadsPage() {
   const scope = useCrmScope();
   const width = useShellWidth();
-  const [rows, setRows] = useState<Array<LeadRow & { name: string; source: string }> | null>(null);
+  const [rows, setRows] = useState<Array<LeadRow & { name: string }> | null>(null);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [reload, setReload] = useState(0);
@@ -103,30 +102,19 @@ export default function LeadsPage() {
         return;
       }
       try {
-        const [leadRes, contactRes] = await Promise.all([
-          fetch("/api/leads", { headers }),
-          fetch("/api/contacts", { headers }),
-        ]);
+        const leadRes = await fetch("/api/leads", { headers });
         const leadsBody = await leadRes.json();
-        const contactsBody = await contactRes.json();
         if (!leadRes.ok) {
           if (cancelled || acceptLeadRows(gen.current, ticket, []) === null) return;
           setError(failureText(leadsBody, leadRes.status));
           setRows([]);
           return;
         }
-        const contacts = new Map<string, ContactRow>();
-        if (contactRes.ok) {
-          for (const item of (contactsBody.items ?? []) as ContactRow[]) contacts.set(item.id, item);
-        }
-        const items = ((leadsBody.items ?? []) as LeadRow[]).map((lead) => {
-          const contact = contacts.get(lead.contact_id);
-          return {
-            ...lead,
-            name: contact?.name || "未命名",
-            source: contact?.source_type ?? "",
-          };
-        });
+        const items = ((leadsBody.items ?? []) as LeadRow[]).map((lead) => ({
+          ...lead,
+          // 联系人缺失时如实说“待同步”，绝不伪造一个可读姓名。
+          name: lead.contact_name || "联系人待同步",
+        }));
         const accepted = acceptLeadRows(gen.current, ticket, items);
         if (cancelled || accepted === null) return;
         setRows(accepted);
@@ -179,17 +167,17 @@ export default function LeadsPage() {
   const firstFollowable = (rows ?? []).find((row) => row.status === "new" || row.status === "in_progress");
 
   return (
-    <main data-page="leads">
-      <header className="page-head">
+    <main data-page="leads" data-pattern="list">
+      <header className="page-head" data-region="header">
         <h1>线索</h1>
-        <Link className="btn primary" data-page-primary="true" href={firstFollowable ? `/leads/${firstFollowable.id}` : "/"}>
+        <Link className="btn primary" data-page-primary="true" data-region="primary_action" href={firstFollowable ? `/leads/${firstFollowable.id}` : "/"}>
           {pagePrimary("leads")}
         </Link>
       </header>
       <p className="muted">来源、负责人和待分配原因以记录为准。这里不创建线索，也不发起触达。</p>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       {error ? (
-        <div data-state="error">
+        <div data-state="error" data-region="error">
           <SurfaceState
             kind="error"
             title="线索没有载入"
@@ -203,18 +191,18 @@ export default function LeadsPage() {
         </div>
       ) : null}
       {rows === null && !error ? (
-        <div data-state="loading">
+        <div data-state="loading" data-region="loading">
           <SurfaceState kind="loading" title="正在读取线索" detail="姓名、来源和负责人马上就位。" />
         </div>
       ) : null}
       {rows !== null && rows.length === 0 && !error ? (
-        <div data-state="empty">
+        <div data-state="empty" data-region="empty">
           <SurfaceState kind="empty" title="还没有线索" detail="这个工作范围里还没有可跟进的线索。" />
         </div>
       ) : null}
       {rows !== null && rows.length > 0 ? (
         <>
-          <div className="card" data-list-filter="leads">
+          <div className="card" data-list-filter="leads" data-region="status">
             <SegmentedControl
               label="状态筛选（当前范围全部线索）"
               items={STATUS_FILTERS}
@@ -226,10 +214,11 @@ export default function LeadsPage() {
             </p>
           </div>
           {visibleRows.length === 0 ? (
-            <div data-state="empty">
+            <div data-state="empty" data-region="empty">
               <SurfaceState kind="empty" title="这个状态没有线索" detail="换一个状态筛选再看。" />
             </div>
           ) : (
+            <div data-region="body">
             <RecordList
               width={width}
               rows={visibleRows.map((row) => ({
@@ -240,6 +229,7 @@ export default function LeadsPage() {
                 facts: leadRowFacts(row),
               }))}
             />
+            </div>
           )}
         </>
       ) : null}
@@ -269,7 +259,7 @@ export default function LeadsPage() {
               </li>
               <li>
                 <span>负责人</span>
-                <strong>{drawerBody.owner_label || "待分配"}</strong>
+                <strong>{drawerBody.owner_label || "待分配"}{drawerBody.assignment_reason && drawerBody.assignment_reason !== "待分配" ? ` · ${drawerBody.assignment_reason}` : ""}</strong>
               </li>
               <li>
                 <span>下一步</span>

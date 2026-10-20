@@ -18,6 +18,7 @@ interface DeskItem {
   mode: string;
   epoch: number;
   owner_member_id?: string;
+  owner_label?: string;
   pending_reason?: string;
   human_todo: boolean;
   next_follow_up_at?: string;
@@ -166,7 +167,7 @@ export default function ReceptionDeskPage() {
               facts={[
                 { label: "会话", value: item.session_id },
                 { label: "模式", value: MODE_TEXT[item.mode] ?? item.mode },
-                { label: "负责人", value: item.owner_member_id || "尚未接管" },
+                { label: "负责人", value: item.owner_label || (item.owner_member_id ? "已接管（负责人待同步）" : "尚未接管") },
                 { label: "待处理", value: item.pending_reason ? (PENDING_TEXT[item.pending_reason] ?? item.pending_reason) : "无" },
                 { label: "人工待办", value: item.human_todo ? "是" : "否" },
                 { label: "下一次跟进", value: item.next_follow_up_at || "未安排" },

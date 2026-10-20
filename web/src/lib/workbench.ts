@@ -1,6 +1,6 @@
 // 销售工作台展示规则（HUI-1893）。队列和金额的真源在 Go 服务端，
 // 这里只决定页面怎么把已经分好的事实画出来。
-import { humanTime, isEngineeringRef } from "@/lib/humanize";
+import { humanSummary, humanTime, isEngineeringRef } from "@/lib/humanize";
 
 export const NARROW_ACTIONS = ["查看新线索", "记跟进", "安排下一次"] as const;
 
@@ -153,6 +153,29 @@ export function statusLine(facts: StatusFacts): string {
   if (facts.won) parts.push("已成交");
   if (facts.paid) parts.push("已回款");
   return parts.join(" · ");
+}
+
+// 最近一次互动：与服务端事实同一口径，但显示层去工程引用、秒级本地时间。
+// 没有互动时明确写“还没有互动”，不拿来源摘要冒充跟进。
+export function interactionText(last?: { at?: string; summary?: string } | null): string {
+  const summary = humanSummary(last?.summary ?? "");
+  const at = humanTime(last?.at);
+  if (!summary) return at ? `还没有互动 · ${at}` : "还没有互动";
+  return at ? `${summary} · ${at}` : summary;
+}
+
+// 列表/今天的来源行：渠道在前，活动编号如实标注；时间留给“最近互动”，
+// 不把每行都变成长时间戳。工程引用（带数字）仍退场。
+export function attributionText(source?: DeskItem["source"]): string {
+  if (!source) return "未记录";
+  const parts: string[] = [];
+  const channel = (source.channel ?? "").trim();
+  const form = (source.form ?? "").trim();
+  const activity = (source.activity ?? "").trim();
+  if (channel) parts.push(channel);
+  if (form && !isEngineeringRef(form)) parts.push(`表单 ${form}`);
+  if (activity && !isEngineeringRef(activity)) parts.push(`活动 ${activity}`);
+  return parts.length > 0 ? parts.join(" · ") : "未记录";
 }
 
 export function sourceText(source?: DeskItem["source"]): string {

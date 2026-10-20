@@ -78,7 +78,7 @@ const TOP_KEYS = [
   "capabilities",
 ] as const;
 
-export type EcoNavProvenance = "public_ai_context" | "provisional_fixture";
+export type EcoNavProvenance = "public_ai_context" | "provisional_fixture" | "server_blocked";
 export type NavState = (typeof NAV_STATES)[number];
 export type StatusReason = (typeof STATUS_REASONS)[number];
 export type PayerSource = (typeof PAYER_SOURCES)[number];

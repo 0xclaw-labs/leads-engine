@@ -1,4 +1,5 @@
 // HUI-2626 finish-r1：列表 + 抽屉共用的同义层。口径统一、不发明新语义。
+import { attributionText } from "@/lib/workbench";
 // money 已由 lib/workbench centsText 统一；这里补 consent/status/source 词汇与抽屉朝向。
 
 export const CONSENT_TEXT: Record<string, string> = {
@@ -88,25 +89,52 @@ function parseLocalTagList(tags: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+export interface LeadSourceFacts {
+  form?: string;
+  activity?: string;
+  channel?: string;
+  at?: string;
+  source_app?: string;
+}
+
 export interface LeadListRow {
   id: string;
   status: string;
   /** 原始来源枚举（manual/form/touch_campaign），优先使用。 */
   source_type?: string;
-  /** 已映射的来源文案（列表合并联系人后可能只有它）。 */
-  source?: string;
+  /** HUI-2598：服务端列表投影的来源；仍走 sourceText 的人话层。 */
+  source?: LeadSourceFacts | string;
   assigned_member_id?: string;
+  /** 服务端投影的可读负责人；永远不是 mem_* 工程 id。 */
+  owner_label?: string;
+  /** 服务端投影的分配说明：待分配 / 已分配给 X / 负责人已停用。 */
+  assignment_reason?: string;
+  contact_name?: string;
+}
+
+export function leadOwnerFacts(row: LeadListRow): string {
+  const reason = (row.assignment_reason ?? "").trim();
+  const label = (row.owner_label ?? "").trim();
+  if (reason === "待分配" || (!reason && !label)) {
+    return "待分配（还没有负责人，先分配后才能持续跟进）";
+  }
+  if (label && reason === `已分配给 ${label}`) return label;
+  if (label && reason && reason !== "待分配") return `${label} · ${reason}`;
+  return label || reason || "负责人信息待同步";
 }
 
 // 线索行 facts（列表与抽屉共用）：来源/状态/负责人，同义层口径。
-// 未分配的线索明确写「待分配」，不把空负责人伪装成已分派。
+// 未分配的线索明确写「待分配」，不把空负责人伪装成已分派；
+// 负责人只显示成员名，不回退到 mem_* 工程 id。
 export function leadRowFacts(row: LeadListRow): { label: string; value: string }[] {
+  const source = typeof row.source === "string"
+    ? leadSourceText(row.source)
+    // 列表是扫描面：渠道在前、活动编号如实标注，不把每行都变成时间戳。
+    : attributionText(row.source ? { form: row.source.form, activity: row.source.activity, channel: row.source.channel } : undefined) || leadSourceText(row.source_type);
   return [
-    { label: "来源", value: leadSourceText(row.source_type ?? row.source) },
+    { label: "来源", value: source },
     { label: "状态", value: leadStatusText(row.status) },
-    {
-      label: "负责人",
-      value: row.assigned_member_id ? row.assigned_member_id : "待分配（接收时没有指定负责人）",
-    },
+    { label: "负责人", value: leadOwnerFacts(row) },
   ];
 }
+

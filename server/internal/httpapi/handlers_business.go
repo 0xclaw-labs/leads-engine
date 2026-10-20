@@ -133,6 +133,12 @@ func (s *Server) resolveAssignee(w http.ResponseWriter, c *caller, requested str
 		fail(w, http.StatusBadRequest, "bad_assignee", "assignee must be a member of the same tenant")
 		return "", false
 	}
+	// HUI-2598 D5：停用成员看不到任何工作范围。把线索派给停用成员等于让它
+	// 从所有销售视图消失，因此这里拒绝，且不改变现有负责人。
+	if !m.Enabled {
+		fail(w, http.StatusBadRequest, "bad_assignee", "assignee is disabled and cannot own records")
+		return "", false
+	}
 	return m.ID, true
 }
 
@@ -468,13 +474,13 @@ func (s *Server) handleLeadList(w http.ResponseWriter, r *http.Request) {
 	if authz.Role(c.Member.Role) != authz.RoleOwner {
 		filter = c.Member.ID
 	}
-	items, err := s.St.ListLeads(c.Member.TenantID, filter)
+	items, err := s.St.ListLeadRows(c.Member.TenantID, filter)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "internal", "lead list failed")
 		return
 	}
 	if items == nil {
-		items = []store.Lead{}
+		items = []store.LeadListRow{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
