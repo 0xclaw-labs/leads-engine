@@ -7,7 +7,7 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  background: #fff;
+  background: var(--pn-bg-surface, var(--surface));
   border-bottom: 1px solid var(--line);
   color: var(--fg);
 }
@@ -70,7 +70,7 @@
 .button {
   cursor: pointer;
   border-color: var(--line);
-  background: #fff;
+  background: var(--pn-bg-surface, var(--surface));
 }
 
 .pressed {
@@ -96,7 +96,7 @@
   right: 0;
   min-width: 160px;
   padding: 8px;
-  background: #fff;
+  background: var(--pn-bg-raised, var(--surface));
   border: 1px solid var(--line);
   border-radius: 8px;
 }

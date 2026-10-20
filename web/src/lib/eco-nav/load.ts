@@ -58,9 +58,11 @@ export function parseEcoNavView(value: unknown): EcoNavModel | null {
 }
 
 export function blockedEcoNavModel(state: NavState, reason: StatusReason, summary: string): EcoNavModel {
+  const blockedState: "hidden" | "denied" | "unavailable" =
+    state === "hidden" || state === "denied" || state === "unavailable" ? state : "unavailable";
   const document: BlockedModel = {
     schema_version: ECO_NAV_SCHEMA_VERSION,
-    status: { state: state as "hidden" | "denied" | "unavailable", reasons: [reason] },
+    status: { state: blockedState, reasons: [reason] },
     brand: null,
     app: null,
     visible_apps: [],
