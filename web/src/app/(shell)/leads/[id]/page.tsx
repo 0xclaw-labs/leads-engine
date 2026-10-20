@@ -186,14 +186,14 @@ export default function LeadDeskPage() {
   }
 
   return (
-    <main data-page="lead-detail">
-      <header className="page-head">
+    <main data-page="lead-detail" data-pattern="detail">
+      <header className="page-head" data-region="header">
         <h1>线索</h1>
         <Link className="btn" href="/">返回工作台</Link>
       </header>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       {err ? (
-        <div data-state="error">
+        <div data-state="error" data-region="error">
           <SurfaceState
             kind="error"
             title="这条线索没有打开"
@@ -212,7 +212,7 @@ export default function LeadDeskPage() {
         </div>
       ) : null}
       {scope.tenant && visible === null && !err ? (
-        <div data-state="loading">
+        <div data-state="loading" data-region="loading">
           <SurfaceState kind="loading" title="正在打开线索" detail="来源、负责人和下一步马上就位。" />
         </div>
       ) : null}
@@ -262,7 +262,7 @@ export default function LeadDeskPage() {
           <div className="card">
             <h2>时间线</h2>
             {(visible.events ?? []).length === 0 ? (
-              <div data-state="empty">
+              <div data-state="empty" data-region="empty">
                 <SurfaceState kind="empty" title="还没有记录" detail="记一次跟进后，时间线会出现在这里。" />
               </div>
             ) : null}
@@ -298,6 +298,7 @@ export default function LeadDeskPage() {
                 type="button"
                 size="sm"
                 data-page-primary="true"
+                data-region="primary_action"
                 data-desk-action={NARROW_ACTIONS[1]}
                 disabled={busy || !note.trim()}
                 onClick={() => void submit(false)}
