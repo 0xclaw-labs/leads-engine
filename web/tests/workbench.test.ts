@@ -318,10 +318,14 @@ describe("today session continue", () => {
     expect(todayReturnHref("take-bare")).toBe("/?focus=take-bare");
     expect(todayReturnHref("")).toBe("/");
     const home = readFileSync("src/app/(shell)/page.tsx", "utf8");
+    const panel = readFileSync("src/components/workbench/conversationPanel.tsx", "utf8");
     const reception = readFileSync("src/app/reception/page.tsx", "utf8");
-    expect(home).toContain("receptionOpenHref");
-    expect(home).toContain("/api/workbench/sessions/");
-    expect(home).toContain("reply-draft");
+    // HUI-2626：会话/回复下沉到行内面板；首页仍负责把这一行挂到同一会话上。
+    expect(home).toContain("ConversationPanel");
+    expect(home).toContain("item.session_id");
+    expect(panel).toContain("receptionOpenHref");
+    expect(panel).toContain("/api/workbench/sessions/");
+    expect(panel).toContain("reply-draft");
     expect(reception).toContain("todayReturnHref");
     expect(reception).toContain("searchToken");
   });

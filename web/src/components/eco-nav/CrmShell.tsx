@@ -107,7 +107,7 @@ export function CrmShell({
       const parsed = parseEcoNavView(body.model);
       if (!parsed) {
         setNavModel(blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航契约不兼容，已停止渲染。"));
-        setNavFault("生态导航没有载入");
+        setNavFault("生态导航没有载入。");
         return;
       }
       setNavModel(parsed);
@@ -192,7 +192,8 @@ export function CrmShell({
         ) : null}
         {show && navFault && navModelFiltered?.status.state === "unavailable" ? (
           <div className="eco-nav-fault" role="status" data-eco-nav-fault="unavailable">
-            <span>{navFault}（应用切换未启用）</span>
+            <span>生态导航暂不可用</span>
+            <span className="muted">{navFault}</span>
             <button type="button" className="btn" onClick={() => setNavReload((n) => n + 1)}>
               重试导航
             </button>

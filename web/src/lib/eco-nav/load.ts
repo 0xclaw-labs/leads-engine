@@ -87,7 +87,7 @@ export function ecoNavFromResponse(input: EcoNavResponseInput): EcoNavModel {
     return blockedEcoNavModel(
       "unavailable",
       "authority_unavailable",
-      "生态导航目录未配置（PUBLIC_AI_ECO_NAV_URL）；不显示预览租户或预览应用。",
+      "还没有接上生态导航，应用切换暂未启用。",
     );
   }
   if (!input.cookiePresent) {
@@ -100,15 +100,15 @@ export function ecoNavFromResponse(input: EcoNavResponseInput): EcoNavModel {
     return blockedEcoNavModel("denied", "membership_denied", "当前身份在这个应用下没有可用成员关系。");
   }
   if (input.status < 200 || input.status >= 300) {
-    return blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航服务暂不可用，稍后重试。");
+    return blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航服务暂不可用，应用切换暂未启用。");
   }
   const parsed = parseEcoNavDocument(input.body);
   if (!parsed.ok) {
-    return blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航契约不兼容，已停止渲染。");
+    return blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航暂时无法兼容，已停止渲染。");
   }
   if (!input.tenant) {
     // 目录返回了模型但没有工作范围：仍是不可渲染，不猜一个租户。
-    return blockedEcoNavModel("unavailable", "authority_unavailable", "还没有选择工作范围，生态导航不渲染。");
+    return blockedEcoNavModel("unavailable", "authority_unavailable", "先选择工作范围，生态导航才会出现。");
   }
   const summary =
     parsed.document.status.state === "degraded" ? "部分能力未知，按服务端状态展示；不会补默认值。" : "";
@@ -132,7 +132,7 @@ export async function fetchEcoNavModel(input: LoadEcoNavInput): Promise<EcoNavMo
     return blockedEcoNavModel(
       "unavailable",
       "authority_unavailable",
-      "生态导航目录地址必须是 loopback（平台服务纪律）；已停止请求。",
+      "生态导航目录地址不符合本机服务纪律，已停止请求。",
     );
   }
   const fetchImpl = input.fetchImpl ?? fetch;

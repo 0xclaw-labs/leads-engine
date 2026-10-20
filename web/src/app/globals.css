@@ -448,14 +448,33 @@ button.primary,
   padding: 0.25rem 0.7rem;
 }
 
-[data-columns="1"][data-facts="chips"] li {
+[data-columns="1"] [data-facts="chips"] li {
   flex-basis: 100%;
   border-radius: 10px;
 }
 
-[data-columns="2"][data-facts="chips"] li {
+[data-columns="2"] [data-facts="chips"] li {
   flex-basis: calc(50% - 0.4rem);
   border-radius: 10px;
+}
+
+/* HUI-2626：390/430 的窄卡里 label 与 value 并排会把“草稿”拆成两行、
+   “为什么在今天”折成两段。1/2 列一律上下排，label 单独一行。 */
+[data-columns="1"] [data-facts="chips"] li,
+[data-columns="2"] [data-facts="chips"] li {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+[data-columns="1"] [data-facts="chips"] li > span,
+[data-columns="2"] [data-facts="chips"] li > span {
+  color: var(--pn-text-muted, var(--muted));
+  font-size: 0.75rem;
+}
+
+[data-facts="chips"] li strong {
+  overflow-wrap: anywhere;
 }
 
 [data-facts="columns"] {
@@ -659,6 +678,10 @@ textarea {
   }
 
   .desk-context select {
+    min-height: 44px;
+  }
+
+  .eco-nav-fault .btn {
     min-height: 44px;
   }
 }

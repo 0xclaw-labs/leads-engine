@@ -5,10 +5,11 @@ import {
   draftPrefill,
   rowReason,
   todayDestination,
+  todayRowTitle,
   type ConversationFacts,
   type ReplyFacts,
 } from "@/lib/todayWorkspace";
-import { receptionOpenHref, TODAY_GROUPS, todayReturnHref, type DeskItem } from "@/lib/workbench";
+import { attributionText, interactionText, receptionOpenHref, TODAY_GROUPS, todayReturnHref, type DeskItem } from "@/lib/workbench";
 
 // HUI-2626：今日工作台的纯规则。页面只画这里判过的事实。
 
@@ -45,6 +46,22 @@ describe("todayDestination", () => {
   it("never invents a link from an engineering-only id", () => {
     const target = todayDestination(item({ id: "d7", kind: "lead", lead_id: "lead with space" }));
     expect(target).toBeNull();
+  });
+});
+
+describe("todayRowTitle", () => {
+  it("uses the customer name when known", () => {
+    expect(todayRowTitle(item({ id: "a", context: { customer: "王客户1" } }), "new_inquiry")).toBe("王客户1");
+  });
+
+  it("names a session by what it is, not by the next-step copy", () => {
+    expect(todayRowTitle(item({ id: "b", kind: "reception", next: { label: "不是模型输出 · 先写回复草稿" } }), "human_takeover")).toBe("待接管的会话");
+    expect(todayRowTitle(item({ id: "c", kind: "reception" }), "waiting_customer")).toBe("等待客户回复的会话");
+  });
+
+  it("names a draft and a source-only lead without an engineering ref", () => {
+    expect(todayRowTitle(item({ id: "d", kind: "ai_draft" }), "ai_draft")).toBe("待确认的回复草稿");
+    expect(todayRowTitle(item({ id: "e", kind: "lead", lead_id: "lead_e", source: { channel: "碰一碰" } }), "new_inquiry")).toBe("碰一碰线索");
   });
 });
 
@@ -129,6 +146,35 @@ describe("draftPrefill", () => {
     expect(draftPrefill([{ id: "r1", status: "generated", kind: "draft", body: "x", epoch: 1 }], "ai")).toBeNull();
     expect(draftPrefill([{ id: "r1", status: "sent", kind: "draft", body: "x", epoch: 1 }], "human")).toBeNull();
     expect(draftPrefill([], "human")).toBeNull();
+  });
+});
+
+describe("attribution text", () => {
+  it("puts the human channel first and labels the campaign reference", () => {
+    expect(attributionText({ channel: "碰一碰", activity: "camp-walk" })).toBe("碰一碰 · 活动 camp-walk");
+  });
+
+  it("drops an engineering submission ref instead of showing an opaque id", () => {
+    expect(attributionText({ channel: "碰一碰", activity: "camp-1" })).toBe("碰一碰");
+    expect(attributionText(undefined)).toBe("未记录");
+  });
+});
+
+describe("interaction text", () => {
+  it("drops the submission engineering ref and the microsecond timestamp", () => {
+    const line = interactionText({
+      summary: "活动 camp-walk · 提交 touch-ref-walk-1 · 碰一碰",
+      at: "2026-10-20T18:45:27.32437Z",
+    });
+    expect(line).not.toContain("touch-ref-walk-1");
+    expect(line).not.toContain("T18:45");
+    expect(line).toContain("碰一碰");
+    expect(line).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  });
+
+  it("says there was no interaction instead of pretending the source is one", () => {
+    expect(interactionText(null)).toBe("还没有互动");
+    expect(interactionText({ summary: "  ", at: "" })).toBe("还没有互动");
   });
 });
 

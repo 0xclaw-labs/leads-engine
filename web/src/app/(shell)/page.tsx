@@ -42,13 +42,14 @@ import {
   serviceDraftClick,
   serviceDraftControl,
   visibleOutreach,
-  sourceText,
+  attributionText,
+  interactionText,
   type DeskItem,
   type MoneyFacts,
   type TodayDraft,
   type TodayGroup,
 } from "@/lib/workbench";
-import { attentionSummary, rowReason, todayDestination } from "@/lib/todayWorkspace";
+import { attentionSummary, rowReason, todayDestination, todayRowTitle } from "@/lib/todayWorkspace";
 
 interface JointChain {
   status?: string;
@@ -411,23 +412,23 @@ function TodayRow({
     auto: item.next?.auto_call === true || item.next?.auto_message === true || item.next?.create_order === true,
   });
   const destination = todayDestination(item);
-  const sourceLine = sourceText(item.source);
+  const sourceLine = attributionText(item.source);
   const factRows = [
     { label: "为什么在今天", value: rowReason(item, group) },
     ...(receptionLine ? [{ label: "接待", value: receptionLine }] : []),
     { label: "来源", value: sourceLine },
     { label: "已确认", value: `${item.context?.customer || "客户未记录"}${item.context?.business ? ` · ${item.context.business}` : ""}${confirmed.length ? ` · ${confirmed.join("、")}` : ""}` },
-    { label: "负责人", value: facts.owner },
+    { label: "负责人", value: item.owner_label || (item.session_id ? "尚未接管" : facts.owner) },
     { label: "状态", value: `状态：${facts.state}` },
     { label: "允许的联系方式", value: allowedContactText(item.allowed_contacts) },
-    { label: "最近一次互动", value: `${item.last_interaction?.summary || "还没有互动"}${item.last_interaction?.at ? ` · ${item.last_interaction.at}` : ""}` },
+    { label: "最近一次互动", value: interactionText(item.last_interaction) },
     { label: "下一步", value: facts.next },
     { label: "依据", value: item.basis || modelAdviceLine() },
     { label: "同步", value: facts.sync },
     ...(outreach ? [{ label: "触达", value: outreach }] : []),
     ...(item.reason && item.kind !== "reception" ? [{ label: "原因", value: item.reason }] : []),
     ...(questions.length > 0 ? [{ label: "待补充", value: questions.join("、") }] : []),
-    ...(item.kind === "ai_draft" ? [{ label: "草稿", value: item.draft_body || "未记录" }] : []),
+    ...(item.draft_body ? [{ label: "草稿", value: item.draft_body }] : []),
   ];
   const followDisabled = !draft.note.trim();
   const primaryFollow = (
@@ -458,7 +459,7 @@ function TodayRow({
   );
   return (
     <li id={`today-item-${item.id}`} data-today-kind={item.kind}>
-      <RecordFrame width={width} tone={tone} title={item.context?.customer || facts.next} facts={factRows} primary={primaryRow && item.lead_id ? primaryFollow : undefined}>
+      <RecordFrame width={width} tone={tone} title={todayRowTitle(item, group)} facts={factRows} primary={primaryRow && item.lead_id ? primaryFollow : undefined}>
         {item.kind === "reception" ? <p data-reception-fact="owner">{receptionLine}</p> : null}
         <p data-joint-chain="incomplete">{facts.chain}</p>
         <div className="queue-actions">
@@ -467,14 +468,10 @@ function TodayRow({
               {conversationOpen ? "收起会话" : "展开会话与回复"}
             </Button>
           ) : null}
+          {/* HUI-2626 行内导航至多一个：展开会话是控件，真正跳转只留一条。 */}
           {destination ? (
             <Link className="btn" href={destination.href} data-desk-action={destination.kind === "conversation" ? undefined : NARROW_ACTIONS[0]}>
               {destination.kind === "conversation" ? "在接待台打开" : destination.label}
-            </Link>
-          ) : null}
-          {item.kind === "ai_draft" && item.lead_id ? (
-            <Link className="btn" href={`/leads/${item.lead_id}`}>
-              查看线索
             </Link>
           ) : null}
           {service.present ? (

@@ -2,7 +2,7 @@
 //
 // 这里只有纯规则：不发请求、不读 DOM、不推断权限。服务端仍是范围、轮次、
 // 可发送性的唯一真源；组件只按这里判过的动作渲染。
-import { isEngineeringRef } from "@/lib/humanize";
+import { isEngineeringRef, leadTitle } from "@/lib/humanize";
 import {
   TODAY_GROUPS,
   TODAY_LABELS,
@@ -34,6 +34,19 @@ export function todayDestination(item: DeskItem): TodayDestination | null {
   if (lead) return { href: `/leads/${lead}`, label: "查看线索", kind: "lead" };
   if (opportunity) return { href: `/opportunities/${opportunity}`, label: "打开商机", kind: "opportunity" };
   return null;
+}
+
+// 行标题：有客户名就用客户名；会话/草稿用“这是什么”，不拿下一步文案
+// （“不是模型输出 · 先写回复草稿”）冒充标题。
+export function todayRowTitle(item: DeskItem, group: TodayGroup): string {
+  const customer = (item.context?.customer ?? "").trim();
+  if (customer) return customer;
+  if (item.kind === "reception") {
+    return group === "waiting_customer" ? "等待客户回复的会话" : "待接管的会话";
+  }
+  if (item.kind === "ai_draft") return "待确认的回复草稿";
+  if (item.lead_id) return leadTitle(item.source);
+  return (item.next?.label ?? "").trim() || TODAY_LABELS[group];
 }
 
 export interface AttentionRow {
@@ -116,7 +129,7 @@ export function conversationActions(session: ConversationFacts | null, reply: Re
   if (!session) blockedReason = "会话还没载入";
   else if (!open) blockedReason = "会话已结案，不能再回复";
   else if (generated && !canApprove) blockedReason = "先转人工接管或改为协助，才能批准这条草稿";
-  else if (!approved && !generated && mode !== "human") blockedReason = "AI 会话不能直接发送人工回复";
+  else if (mode === "ai") blockedReason = "AI 会话不能直接发送人工回复；先转人工接管。";
   return { open, canTakeover, canRelease, canApprove, canSend, canHumanReply, blockedReason };
 }
 

@@ -77,6 +77,16 @@ const FORMAL_PAGES = [
   "src/app/(shell)/isolation/page.tsx",
 ];
 
+describe("narrow record chips", () => {
+  it("targets the record frame's columns, not a selector that never matches", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+    expect(css).toContain('[data-columns="1"] [data-facts="chips"] li');
+    expect(css).toContain('[data-columns="2"] [data-facts="chips"] li');
+    expect(css).not.toContain('[data-columns="1"][data-facts="chips"]');
+    expect(css).toContain("flex-direction: column");
+  });
+});
+
 describe("sales workbench shell", () => {
   it("switches only among named scopes and drops the other tenant", () => {
     expect(scopes.map((scope) => scope.display_name)).toEqual(["客户甲", "客户乙"]);

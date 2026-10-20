@@ -35,7 +35,7 @@ describe("ecoNavFromResponse", () => {
     expect(model.renderable).toBe(false);
     expect(model.status.state).toBe("unavailable");
     expect(model.brand).toBeNull();
-    expect(model.status.summary).toContain("未配置");
+    expect(model.status.summary).toContain("还没有接上");
   });
 
   it("is denied without a session cookie or on 401/403", () => {
@@ -59,7 +59,7 @@ describe("ecoNavFromResponse", () => {
     }
     const bad = ecoNavFromResponse({ configured: true, cookiePresent: true, tenant: "tnt_a", status: 200, body: { schema_version: "eco-nav/v2" } });
     expect(bad.status.state).toBe("unavailable");
-    expect(bad.status.summary).toContain("契约");
+    expect(bad.status.summary).toContain("兼容");
   });
 
   it("maps a valid document with server provenance and the tenant", () => {

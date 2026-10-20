@@ -1,5 +1,5 @@
 // HUI-2626 finish-r1：列表 + 抽屉共用的同义层。口径统一、不发明新语义。
-import { sourceText } from "@/lib/workbench";
+import { attributionText } from "@/lib/workbench";
 // money 已由 lib/workbench centsText 统一；这里补 consent/status/source 词汇与抽屉朝向。
 
 export const CONSENT_TEXT: Record<string, string> = {
@@ -128,8 +128,8 @@ export function leadOwnerFacts(row: LeadListRow): string {
 export function leadRowFacts(row: LeadListRow): { label: string; value: string }[] {
   const source = typeof row.source === "string"
     ? leadSourceText(row.source)
-    // 列表是扫描面：只给渠道/人话，不把每行都变成时间戳；活动工程引用由 sourceText 退场。
-    : sourceText(row.source ? { form: row.source.form, activity: row.source.activity, channel: row.source.channel } : undefined) || leadSourceText(row.source_type);
+    // 列表是扫描面：渠道在前、活动编号如实标注，不把每行都变成时间戳。
+    : attributionText(row.source ? { form: row.source.form, activity: row.source.activity, channel: row.source.channel } : undefined) || leadSourceText(row.source_type);
   return [
     { label: "来源", value: source },
     { label: "状态", value: leadStatusText(row.status) },

@@ -16,7 +16,8 @@ import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { postJson } from "@/lib/fetchJson";
 import { failureText, listTenantHeader, productError } from "@/lib/productShell";
-import { REPLY_STATUS_TEXT, newStaffToken } from "@/lib/reception";
+import { humanTime } from "@/lib/humanize";
+import { REPLY_STATUS_TEXT, clearReplyCompose, newStaffToken, recallReplyCompose, rememberReplyCompose } from "@/lib/reception";
 import { conversationActions, draftPrefill, type ConversationFacts, type ReplyFacts } from "@/lib/todayWorkspace";
 import { receptionOpenHref } from "@/lib/workbench";
 
@@ -123,7 +124,14 @@ export function ConversationPanel({
     setNotice("");
     setError("");
     setLoaded(false);
-    dirty.current = false;
+    const remembered = recallReplyCompose(scope.tenant ?? "", sessionId);
+    dirty.current = remembered.trim() !== "";
+    if (remembered) {
+      setText(remembered);
+      setNotice("恢复了尚未保存的回复；它还没有写到服务端。");
+    } else {
+      setText("");
+    }
     void load();
   }, [load]);
 
@@ -164,16 +172,16 @@ export function ConversationPanel({
       return null;
     }
     setDraftId(id);
-    setNotice(saved.sent === true ? "这条回复已经是已发送状态。" : "草稿已保存，尚未发送。");
     await load();
+    setNotice(saved.sent === true ? "这条回复已经是已发送状态。" : "草稿已保存，尚未发送。");
     return id;
   }
 
   async function approveDraft(id: string): Promise<boolean> {
     const out = await call(`/api/reception/sessions/${encodeURIComponent(sessionId)}/replies/${encodeURIComponent(id)}/approve`, {});
     if (!out) return false;
-    setNotice("草稿已批准，尚未发送。");
     await load();
+    setNotice("草稿已批准，尚未发送。");
     return true;
   }
 
@@ -194,11 +202,12 @@ export function ConversationPanel({
       receipt_id: newStaffToken("rcpt-"),
     });
     if (!sent) return;
+    await load();
+    clearReplyCompose(scope.tenant ?? "", sessionId);
     setNotice(sent.duplicate === true ? "这条回复已经发送过，没有重复发送。" : "回复已发送。");
     dirty.current = false;
     setText("");
     setDraftId("");
-    await load();
     onChanged?.();
   }
 
@@ -206,9 +215,9 @@ export function ConversationPanel({
     const epoch = session?.epoch ?? initialEpoch ?? 1;
     const out = await call(`/api/reception/sessions/${encodeURIComponent(sessionId)}/takeover`, { epoch });
     if (!out) return;
-    setNotice("已转人工接管。之前未发送的旧轮次草稿已作废；请确认内容后重新保存。");
     setDraftId("");
     await load();
+    setNotice("已转人工接管。之前未发送的旧轮次草稿已作废；请确认内容后重新保存。");
     onChanged?.();
   }
 
@@ -216,9 +225,9 @@ export function ConversationPanel({
     const epoch = session?.epoch ?? 1;
     const out = await call(`/api/reception/sessions/${encodeURIComponent(sessionId)}/release`, { epoch });
     if (!out) return;
-    setNotice("已交回 AI；未发送的人工草稿已作废。");
     setDraftId("");
     await load();
+    setNotice("已交回 AI；未发送的人工草稿已作废。");
     onChanged?.();
   }
 
@@ -228,7 +237,8 @@ export function ConversationPanel({
     ...replies.map((reply) => ({
       key: reply.id,
       at: reply.created_at ?? "",
-      who: reply.kind === "human" ? "人工" : reply.kind === "draft" ? "人工草稿" : "AI 草稿",
+      // 服务端的 kind 无法区分“AI 生成”与“人工保存”，不要替它编一个作者。
+      who: reply.kind === "human" ? "人工" : "草稿",
       body: reply.body,
       status: REPLY_STATUS_TEXT[reply.status ?? ""] ?? reply.status ?? "",
     })),
@@ -282,7 +292,7 @@ export function ConversationPanel({
                     <strong>{turn.who}</strong>：{turn.body}
                   </p>
                   <p className="muted">
-                    {turn.at}
+                    {humanTime(turn.at)}
                     {turn.status ? ` · ${turn.status}` : ""}
                   </p>
                 </li>
@@ -300,6 +310,7 @@ export function ConversationPanel({
                   dirty.current = true;
                   setText(event.target.value);
                   setDraftId("");
+                  rememberReplyCompose(scope.tenant ?? "", sessionId, event.target.value);
                 }}
                 placeholder={actions.canHumanReply ? "写给这位客户的人工回复" : "先写回复；保存后仍需人工批准才会发送"}
                 maxLength={2000}

@@ -78,6 +78,53 @@ export function followUpSubmitAllowed(leadId: string | undefined, note: string):
   return Boolean(leadId && leadId.trim()) && note.trim() !== "";
 }
 
+// HUI-2598 D4：会话面板重渲染/短暂离开时，未保存的回复文本按 (租户, 会话)
+// 留在本机 sessionStorage；它不是服务端草稿，刷新页面仍在，关闭标签页即清除。
+// 文案必须明确“未保存”，且保存/发送成功后才清除。
+const REPLY_DRAFT_PREFIX = "leads_reply_compose:";
+
+function replyDraftKey(tenant: string, sessionId: string): string | null {
+  const t = tenant.trim();
+  const s = sessionId.trim();
+  if (!t || !s || t.length > 128 || s.length > 128) return null;
+  if (!/^[A-Za-z0-9._:@-]+$/.test(t) || !/^[A-Za-z0-9._:@-]+$/.test(s)) return null;
+  return `${REPLY_DRAFT_PREFIX}${t}:${s}`;
+}
+
+export function rememberReplyCompose(tenant: string, sessionId: string, text: string): void {
+  if (typeof window === "undefined") return;
+  const key = replyDraftKey(tenant, sessionId);
+  if (!key) return;
+  try {
+    if (text.trim() === "") window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, text.slice(0, 2000));
+  } catch {
+    /* storage disabled: the composer still works, just without local memory */
+  }
+}
+
+export function recallReplyCompose(tenant: string, sessionId: string): string {
+  if (typeof window === "undefined") return "";
+  const key = replyDraftKey(tenant, sessionId);
+  if (!key) return "";
+  try {
+    return window.sessionStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function clearReplyCompose(tenant: string, sessionId: string): void {
+  if (typeof window === "undefined") return;
+  const key = replyDraftKey(tenant, sessionId);
+  if (!key) return;
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function newStaffToken(prefix: string): string {
   const bytes = new Uint8Array(8);
   if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {

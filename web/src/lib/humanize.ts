@@ -45,11 +45,8 @@ function mapConsentTokens(text: string): string {
  * - 已知授权项映射成人话；
  * - 「表单/活动/提交 <工程引用>」段从展示退场（原始值留在数据层）。
  */
-export function eventLine(kind: string, summary: string): string {
-  const label = eventKindLabel(kind);
+export function humanSummary(summary: string): string {
   let text = (summary ?? "").trim();
-  if (label && text.startsWith(`${label} `)) text = text.slice(label.length + 1).trim();
-  if (text === label) text = "";
   const wasRevoked = /^撤销授权\s+/.test(text);
   text = mapConsentTokens(text);
   const kept = text
@@ -61,6 +58,16 @@ export function eventLine(kind: string, summary: string): string {
       return !(m && isEngineeringRef(m[2]));
     });
   text = kept.join(" · ");
+  return wasRevoked ? `撤销${text.replace(/^撤销/, "")}` : text;
+}
+
+export function eventLine(kind: string, summary: string): string {
+  const label = eventKindLabel(kind);
+  let text = (summary ?? "").trim();
+  if (label && text.startsWith(`${label} `)) text = text.slice(label.length + 1).trim();
+  if (text === label) text = "";
+  const wasRevoked = /^撤销授权\s+/.test(text);
+  text = humanSummary(text);
   if (!text) return label;
   // 授权事件读成一句话：「渠道内回复授权」；映射标签已带「授权」尾词则不重复。
   if (kind === "consent" && !wasRevoked && !text.endsWith("授权")) text = `${text}授权`;
