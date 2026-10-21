@@ -2,10 +2,12 @@
 
 import React, { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Button as PainuoButton } from "@/vendor/painuo/react/v1/src/index";
 import {
   SHELL_NAV,
   chooseScope,
+  isNavActive,
   factTone,
   shellStructure,
   toneLabel,
@@ -232,6 +234,7 @@ export function WorkbenchChrome({
 }) {
   const structure = shellStructure(width);
   const active = chooseScope(scopes, activeId ?? "");
+  const pathname = usePathname();
   return (
     <div className="desk-frame" data-shell-density={structure.density} data-shell-nav={structure.navigation}>
       {/* HUI-2626 fix2（gate-r2 #4 region）：工作范围条补地标，页面内容全部落入 landmark。 */}
@@ -255,11 +258,20 @@ export function WorkbenchChrome({
         </select>
       </div>
       <nav className="desk-nav" aria-label="销售工作台" data-shell-nav={structure.navigation}>
-        {SHELL_NAV.map((item) => (
-          <Link key={item.id} href={item.href}>
-            {item.label}
-          </Link>
-        ))}
+        {/* P0：当前页导航项高亮。aria-current="page" 是无障碍真源，样式跟随选择器。 */}
+        {SHELL_NAV.map((item) => {
+          const current = isNavActive(pathname, item.href);
+          return (
+            <Link
+              key={item.id}
+              href={item.href}
+              aria-current={current ? "page" : undefined}
+              className={current ? "nav-current" : undefined}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
       <div data-shell-main="true">{children}</div>
     </div>

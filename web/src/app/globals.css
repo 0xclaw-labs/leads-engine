@@ -379,6 +379,16 @@ button.primary,
   background: var(--bg);
 }
 
+/* P0：当前页导航高亮。aria-current 由 chrome.tsx 按路径写入（isNavActive）；
+   颜色只消费既有 token——work.light 下文字/描边用深青 --pn-brand-text
+   （与 .tab.active 同一配方），:root 回退用 --accent，不新增裸 hex。 */
+.desk-nav a[aria-current="page"] {
+  border-color: var(--pn-brand-text, var(--accent));
+  color: var(--pn-brand-text, var(--accent));
+  font-weight: 600;
+  background: var(--pn-bg-sunken, var(--bg));
+}
+
 .record-list {
   display: grid;
   gap: 0.75rem;

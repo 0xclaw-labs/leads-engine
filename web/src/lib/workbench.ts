@@ -284,21 +284,6 @@ export function nextLine(next?: { source?: string; label?: string }): string {
   return "不是模型输出 · " + label;
 }
 
-export function serviceDraftControl(draft?: { present?: boolean; enabled?: boolean; reason?: string } | null): {
-  present: boolean;
-  enabled: boolean;
-  reason: string;
-} {
-  if (!draft?.present) {
-    return { present: false, enabled: false, reason: draft?.reason ?? "" };
-  }
-  return { present: true, enabled: !!draft.enabled, reason: draft.reason ?? "" };
-}
-
-export function serviceDraftClick(): { submitted: false; outreach: false; message: string } {
-  return { submitted: false, outreach: false, message: "本轮不提交草稿" };
-}
-
 // receptionFactLine is the only reception sentence on the sales desk.
 // A missing holder, epoch, or version is not filled in. A member id is not a name.
 export function receptionFactLine(item: DeskItem): string {

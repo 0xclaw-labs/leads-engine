@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+// P0 导航高亮：WorkbenchChrome 现读 usePathname；node SSR 环境无 app router，按"/"固定。
+vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
 import { RecordFrame, SurfaceState, WorkbenchChrome } from "@/components/workbench/chrome";
 import {
   MISSING_SCOPE,

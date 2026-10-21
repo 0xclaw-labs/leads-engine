@@ -14,7 +14,7 @@ import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { postJson } from "@/lib/fetchJson";
-import { MISSING_SCOPE, factTone, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
+import { factTone, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import {
   HOME_SURFACE,
   NARROW_ACTIONS,
@@ -39,8 +39,6 @@ import {
   todaySaveReady,
   renderLeadFacts,
   scopeCaption,
-  serviceDraftClick,
-  serviceDraftControl,
   visibleOutreach,
   attributionText,
   interactionText,
@@ -104,6 +102,8 @@ export default function Home() {
   const [jointChain, setJointChain] = useState<JointChain | null>(null);
   const [err, setErr] = useState("");
   const [draftMsg, setDraftMsg] = useState("");
+  // P0：「记跟进」提交反馈——提交中禁用按钮防重复提交，失败恢复可点并走 draftMsg 错误通道。
+  const [saving, setSaving] = useState(false);
   const [focusId, setFocusId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, TodayDraft>>({});
   const [conversationFor, setConversationFor] = useState("");
@@ -198,10 +198,12 @@ export default function Home() {
   async function submitFollow(item: DeskItem, mode: "note" | "schedule") {
     const headers = listTenantHeader(scope.tenant);
     if (!headers || !item.lead_id) return;
+    if (saving) return;
     const draft = draftFor(item.id);
     const note = followNote(draft.note);
     if (!note) return;
     if (mode === "schedule" && !draft.nextAt) return;
+    setSaving(true);
     setDraftMsg("");
     const waiting = mode === "note" && draft.disposition === "waiting_customer";
     const payload: Record<string, unknown> = {
@@ -212,18 +214,24 @@ export default function Home() {
     if (!waiting && draft.nextAt) {
       payload.next_follow_up_at = new Date(draft.nextAt).toISOString().replace(/\.\d{3}Z$/, "Z");
     }
-    const out = await postJson<{ today_group?: string; next?: { label?: string } }>(`/api/leads/${item.lead_id}/follow-through`, { "content-type": "application/json", ...headers }, payload);
-    if (!out.ok) {
-      setDraftMsg(failureText(out.body, out.status));
-      return;
+    try {
+      const out = await postJson<{ today_group?: string; next?: { label?: string } }>(`/api/leads/${item.lead_id}/follow-through`, { "content-type": "application/json", ...headers }, payload);
+      if (!out.ok) {
+        setDraftMsg(failureText(out.body, out.status));
+        return;
+      }
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+      setDraftMsg(out.body.today_group === "scheduled_next" ? "已安排下一步，不在今天的待办里" : (out.body.next?.label ?? "已记下"));
+      setReload((n) => n + 1);
+    } catch (e) {
+      setDraftMsg(productError((e as Error).message));
+    } finally {
+      setSaving(false);
     }
-    setDrafts((current) => {
-      const next = { ...current };
-      delete next[item.id];
-      return next;
-    });
-    setDraftMsg(out.body.today_group === "scheduled_next" ? "已安排下一步，不在今天的待办里" : (out.body.next?.label ?? "已记下"));
-    setReload((n) => n + 1);
   }
 
   async function reviseDraft(item: DeskItem) {
@@ -250,6 +258,17 @@ export default function Home() {
     }
     setDraftMsg("已忽略草稿，没有发送");
     setReload((n) => n + 1);
+  }
+
+  // P0：未选工作范围时整页只渲染壳级同款 recovery（默认标题「需要先选择工作范围」）。
+  // 页内不再自拟「正在整理今天的工作」等文案与壳层状态打架。壳层 CrmShell 在 scopeFault
+  // 时根本不渲染 children，所以这里只会出现在 whoami 正常但用户未选范围的场景，不会双重叠显。
+  if (!scope.tenant) {
+    return (
+      <main data-today-home={HOME_SURFACE} data-page="today" data-pattern="workspace">
+        <SurfaceState kind="recovery" />
+      </main>
+    );
   }
 
   return (
@@ -302,7 +321,6 @@ export default function Home() {
         </details>
       </section>
 
-      {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       {scope.tenant && err ? (
         <div data-state="error" data-region="error">
           <SurfaceState
@@ -362,7 +380,7 @@ export default function Home() {
                     onFollow={(mode) => void submitFollow(item, mode)}
                     onRevise={() => void reviseDraft(item)}
                     onIgnore={() => void ignoreDraft(item)}
-                    onService={() => setDraftMsg(serviceDraftClick().message)}
+                    saving={saving}
                   />
                 ))}
               </ul>
@@ -394,7 +412,7 @@ function TodayRow({
   onFollow,
   onRevise,
   onIgnore,
-  onService,
+  saving,
 }: {
   width: number;
   group: TodayGroup;
@@ -409,12 +427,11 @@ function TodayRow({
   onFollow: (mode: "note" | "schedule") => void;
   onRevise: () => void;
   onIgnore: () => void;
-  onService: () => void;
+  saving: boolean;
 }) {
   const facts = renderLeadFacts(item, jointChain);
   const outreach = visibleOutreach(item.outreach_notice);
   const receptionLine = receptionFactLine(item);
-  const service = serviceDraftControl(item.service_draft);
   const confirmed = item.context?.facts ?? [];
   const questions = questionsFor(confirmed, item.context?.ask ?? item.ask ?? [], []);
   const tone = factTone({
@@ -441,6 +458,7 @@ function TodayRow({
     ...(item.draft_body ? [{ label: "草稿", value: item.draft_body }] : []),
   ];
   const followDisabled = !draft.note.trim();
+  // P0：提交中禁用并显示「提交中…」，防止双击重复提交；失败后 saving 归位即恢复可点。
   const primaryFollow = (
     <Button
       variant="primary"
@@ -448,10 +466,10 @@ function TodayRow({
       size="sm"
       data-page-primary="true"
       data-desk-action={NARROW_ACTIONS[1]}
-      disabled={followDisabled}
+      disabled={followDisabled || saving}
       onClick={() => onFollow("note")}
     >
-      {pagePrimary("today")}
+      {saving ? "提交中…" : pagePrimary("today")}
     </Button>
   );
   const secondaryFollow = (
@@ -461,10 +479,10 @@ function TodayRow({
       size="sm"
       data-page-primary="false"
       data-desk-action={NARROW_ACTIONS[1]}
-      disabled={followDisabled}
+      disabled={followDisabled || saving}
       onClick={() => onFollow("note")}
     >
-      {pagePrimary("today")}
+      {saving ? "提交中…" : pagePrimary("today")}
     </Button>
   );
   return (
@@ -484,13 +502,7 @@ function TodayRow({
               {destination.kind === "conversation" ? "在接待台打开" : destination.label}
             </Link>
           ) : null}
-          {service.present ? (
-            <Button variant="secondary" type="button" size="sm" disabled={!service.enabled} onClick={onService}>
-              创建服务需求草稿
-            </Button>
-          ) : null}
         </div>
-        {service.present && !service.enabled ? <p className="muted">{service.reason}</p> : null}
         {conversationOpen && item.session_id ? (
           <ConversationPanel
             sessionId={item.session_id}
@@ -518,7 +530,7 @@ function TodayRow({
             <DateTimeField label="下一次（北京时间）" value={draft.nextAt} onChange={(v) => onDraft({ nextAt: v })} />
             <div className="queue-actions">
               {primaryRow ? null : secondaryFollow}
-              <Button variant="secondary" type="button" size="sm" data-desk-action={NARROW_ACTIONS[2]} disabled={!draft.note.trim() || !draft.nextAt} onClick={() => onFollow("schedule")}>
+              <Button variant="secondary" type="button" size="sm" data-desk-action={NARROW_ACTIONS[2]} disabled={saving || !draft.note.trim() || !draft.nextAt} onClick={() => onFollow("schedule")}>
                 {NARROW_ACTIONS[2]}
               </Button>
             </div>
