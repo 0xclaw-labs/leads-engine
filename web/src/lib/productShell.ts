@@ -121,6 +121,20 @@ export const SCOPE_UNAVAILABLE = "没有可用的工作范围。今天、线索�
 export interface ShellWhoamiBody {
   tenant_id?: unknown;
   email?: unknown;
+  error?: unknown;
+}
+
+// 入口故障分型：三种完全不同的死路不能折叠成同一句文案。
+// - unauthenticated：没登录——指路入口（从生态工作台登录），不伪造登录链接；
+// - no_scope：已登录但没有可用范围——找主管理员确认成员关系；
+// - unreachable：网络或服务没响应——检查网络后重试。
+export type ShellEntryFailure = "unauthenticated" | "no_scope" | "unreachable";
+
+// status 可选：真实 fetch 一定带；测试桩可以只给 ok/body（按无范围处理）。
+export interface ShellWhoamiResponse {
+  ok: boolean;
+  body: ShellWhoamiBody;
+  status?: number;
 }
 
 export interface ShellWhoamiResult {
@@ -132,33 +146,46 @@ export interface ShellWhoamiResult {
   persist: boolean;
   switcher: WorkScope[];
   fault: string;
+  /** confirmed 时为 null；与 fault 是同一判定的两种形态（分型 / 产品文案）。 */
+  failure: ShellEntryFailure | null;
   requestedTenant: string | null;
 }
 
-async function browserWhoami(path: string, init: { headers: Record<string, string> }): Promise<{ ok: boolean; body: ShellWhoamiBody }> {
+function classifyWhoamiFailure(res: ShellWhoamiResponse): ShellEntryFailure {
+  const status = typeof res.status === "number" ? res.status : 0;
+  const error = typeof res.body?.error === "string" ? res.body.error.trim() : "";
+  if (status === 401 || error === "unauthenticated") return "unauthenticated";
+  if (status >= 500) return "unreachable";
+  return "no_scope";
+}
+
+async function browserWhoami(path: string, init: { headers: Record<string, string> }): Promise<ShellWhoamiResponse> {
   const res = await fetch(path, { headers: init.headers });
   const body = (await res.json().catch(() => ({}))) as ShellWhoamiBody;
-  return { ok: res.ok, body };
+  return { ok: res.ok, body, status: res.status };
 }
 
 // 已有存储或登录租户时必须带上 x-tenant-id。空头会在进 whoami 之前被拒，登录租户就进不了允许集合。
 export async function runShellWhoami(input: {
   storedId: string | null;
   membershipScopes: WorkScope[];
-  fetchImpl?: (path: string, init: { headers: Record<string, string> }) => Promise<{ ok: boolean; body: ShellWhoamiBody }>;
+  fetchImpl?: (path: string, init: { headers: Record<string, string> }) => Promise<ShellWhoamiResponse>;
 }): Promise<ShellWhoamiResult> {
   const header = listTenantHeader(input.storedId);
   const headers: Record<string, string> = header ? { ...header } : {};
   let ok = false;
+  let failure: ShellEntryFailure | null = null;
   let session: string | null = null;
   let email: string | null = null;
   try {
     const res = await (input.fetchImpl ?? browserWhoami)("/api/whoami", { headers });
     ok = res.ok === true;
+    if (!ok) failure = classifyWhoamiFailure(res);
     if (ok && typeof res.body?.tenant_id === "string" && res.body.tenant_id.trim()) session = res.body.tenant_id.trim();
     if (ok && typeof res.body?.email === "string" && res.body.email.trim()) email = res.body.email.trim();
   } catch {
     ok = false;
+    failure = "unreachable";
   }
   const settlement = settleWorkTenant({
     membershipScopes: input.membershipScopes,
@@ -177,6 +204,8 @@ export async function runShellWhoami(input: {
     persist: settlement.persist,
     switcher: confirmed ? withSessionScope(input.membershipScopes, session) : [],
     fault: confirmed ? "" : SCOPE_UNAVAILABLE,
+    // whoami 通了但存储/登录租户都不在允许集合里，同样是“无范围”，不是服务故障。
+    failure: confirmed ? null : failure ?? "no_scope",
     requestedTenant: header?.["x-tenant-id"] ?? null,
   };
 }

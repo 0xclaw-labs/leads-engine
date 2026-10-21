@@ -219,12 +219,15 @@ export function WorkbenchChrome({
   scopes,
   activeId,
   onSwitch,
+  scopeEmptyLabel = "未选择",
   children,
 }: {
   width: number;
   scopes: WorkScope[];
   activeId: string | null;
   onSwitch: (tenant: string) => void;
+  /** 没有已确认范围时范围条与空选项的文案；默认“未选择”，未登录由壳传入“未登录”。 */
+  scopeEmptyLabel?: string;
   children: ReactNode;
 }) {
   const structure = shellStructure(width);
@@ -234,7 +237,7 @@ export function WorkbenchChrome({
       {/* HUI-2626 fix2（gate-r2 #4 region）：工作范围条补地标，页面内容全部落入 landmark。 */}
       <div className="desk-context" id="work-context" data-work-context="tenant" role="region" aria-label="工作范围">
         <span>工作范围</span>
-        <strong>{active?.display_name ?? "未选择"}</strong>
+        <strong>{active?.display_name ?? scopeEmptyLabel}</strong>
         <select
           aria-label="切换工作范围"
           value={active?.tenant_id ?? ""}
@@ -243,7 +246,7 @@ export function WorkbenchChrome({
             if (chosen) onSwitch(chosen.tenant_id);
           }}
         >
-          {active ? null : <option value="">未选择</option>}
+          {active ? null : <option value="">{scopeEmptyLabel}</option>}
           {scopes.map((scope) => (
             <option key={scope.tenant_id} value={scope.tenant_id}>
               {scope.display_name}
