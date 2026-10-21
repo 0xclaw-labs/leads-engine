@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { failureText } from "@/lib/productShell";
+import { failureText, FEATURE_CLOSED_TEXT } from "@/lib/productShell";
 import { receptionDeskLoad } from "@/app/reception/desk-load";
 
-const CLOSED = "接待功能没有打开，现在不能载入会话。";
+const CLOSED = FEATURE_CLOSED_TEXT;
 const UNAVAILABLE = "服务暂时没有响应，请稍后再试。";
 const LEAK = /parse|JSON|Unexpected|page not found/i;
 

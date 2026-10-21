@@ -223,6 +223,25 @@ export function guardTenantCommit(switcher: WorkScope[], tenant: string): string
   return chooseScope(switcher, tenant)?.tenant_id ?? null;
 }
 
+// ⑥ 登记制 flag（FEATURE_SOP_REACH / FEATURE_OUTBOUND_CALL / FEATURE_INTENT_GRADE /
+// FEATURE_RECEPTION 等）关闭时路由不注册，Go mux 以 text/plain「404 page not found」
+// 应答，前端解析不出 JSON 形体；记录级 404 一定是服务端 fail() 的 JSON
+//（error + message 字段都在）。因此「404 且解析不出 fail 形状」即功能未开通，
+// 映射为开通指引，不再冒充「这条记录不存在」。body 传解析结果（解析失败为 null）。
+export const FEATURE_CLOSED_TEXT = "该功能未开通，请联系管理员开通。";
+
+export function flagClosedText(status: number | undefined, body: unknown): string | null {
+  if (status !== 404) return null;
+  const record = (typeof body === "object" && body !== null ? body : {}) as { error?: unknown };
+  const shaped = typeof record.error === "string" && record.error.trim() !== "";
+  return shaped ? null : FEATURE_CLOSED_TEXT;
+}
+
+// flag 域页面错误映射的统一入口：flag 关闭给开通指引，其余沿用 failureText 语义。
+export function domainFailureText(status: number | undefined, body: unknown): string {
+  return flagClosedText(status, body) ?? failureText(body ?? {}, status);
+}
+
 export function nextLeadTicket(previousSeq: number, tenant: string): { seq: number; tenant: string } {
   return { seq: previousSeq + 1, tenant };
 }

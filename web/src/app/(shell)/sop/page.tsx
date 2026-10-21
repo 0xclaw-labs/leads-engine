@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SurfaceState } from "@/components/workbench/chrome";
 import { Button, Input } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
+import { MISSING_SCOPE, domainFailureText, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import { presentSOP, recordLabel, type SOPCapability } from "@/lib/sopReach";
 import {
   consentChoices,
@@ -76,8 +76,10 @@ export default function SOPPage() {
         fetch("/api/contacts", { headers: h }),
       ]);
       if (loadSeq.current !== seq) return;
-      const capBody = (await capRes.json()) as SOPCapability & { message?: string; error?: string };
-      const listBody = await listRes.json();
+      // ⑥ flag 域初次加载：解析失败（mux text/plain 404）按「功能未开通」指引，
+      // 记录级 404（fail JSON）保持原「记录不存在」语义。
+      const capBody = (await capRes.json().catch(() => null)) as (SOPCapability & { message?: string; error?: string }) | null;
+      const listBody = await listRes.json().catch(() => null);
       setView(presentSOP(capBody));
       let nextContacts: ScopeContact[] = [];
       if (contactRes.ok) {
@@ -86,12 +88,12 @@ export default function SOPPage() {
       }
       setContacts(nextContacts);
       if (!listRes.ok) {
-        setError(failureText(listBody, listRes.status));
+        setError(domainFailureText(listRes.status, listBody));
         setItems([]);
         return;
       }
-      if (!capRes.ok) setError(failureText(capBody, capRes.status));
-      setItems((listBody.items ?? []) as SOPAction[]);
+      if (!capRes.ok) setError(domainFailureText(capRes.status, capBody));
+      setItems(((listBody?.items as SOPAction[]) ?? []));
     } catch (e) {
       if (loadSeq.current !== seq) return;
       setError(e instanceof Error ? productError(e.message) : "加载失败");

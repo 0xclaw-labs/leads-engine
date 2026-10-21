@@ -5,7 +5,7 @@ import { useCallback, useState } from "react";
 import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { Button, Checkbox, Input } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { MISSING_SCOPE, failureText, listTenantHeader, productError } from "@/lib/productShell";
+import { MISSING_SCOPE, domainFailureText, listTenantHeader, productError } from "@/lib/productShell";
 import { modelStatusText, originLabel, outreachControls, presentAssessment, type GradeInput, type GradeView } from "@/lib/intentGrade";
 
 // HUI-1684 意向分级页。只打本站 BFF。规则版本由服务端返回。
@@ -143,14 +143,16 @@ export default function IntentGradePage() {
       return;
     }
     const res = await fetch("/api/intent-grades/sample-report", { headers: listTenantHeader(tenant) ?? {} });
-    const body = await res.json();
+    // ⑥ flag 域：解析失败（mux text/plain 404）按「功能未开通」指引，不再把
+    // 功能关闭说成记录不存在。
+    const body = (await res.json().catch(() => null)) as { outcomes?: ReportOutcome[]; disclaimer?: string } | null;
     if (!res.ok) {
       setReport(null);
-      setReportNote(failureText(body, res.status));
+      setReportNote(domainFailureText(res.status, body));
       return;
     }
-    setReport((body.outcomes ?? []) as ReportOutcome[]);
-    setReportNote(typeof body.disclaimer === "string" ? body.disclaimer : "");
+    setReport((body?.outcomes ?? []) as ReportOutcome[]);
+    setReportNote(typeof body?.disclaimer === "string" ? body.disclaimer : "");
   }, [tenant]);
 
   const score = async () => {
@@ -169,13 +171,13 @@ export default function IntentGradePage() {
         evidence: text.trim() ? [{ id: "ev-page", tenant_id: tenant, text: text.trim() }] : [],
       }),
     });
-    const body = (await res.json()) as ScoreResponse;
+    const body = (await res.json().catch(() => null)) as ScoreResponse | null;
     if (!res.ok) {
-      setError(failureText(body, res.status));
+      setError(domainFailureText(res.status, body));
       return;
     }
-    const snap = body.snapshot ?? body;
-    setSnapshotId(snap.id ?? "");
+    const snap = body?.snapshot ?? body ?? ({} as SnapshotBody);
+    setSnapshotId(snap?.id ?? "");
     setView(presentAssessment(asInput(snap)));
   };
 
@@ -196,13 +198,13 @@ export default function IntentGradePage() {
         facts: [{ field: "intent", value: grade }],
       }),
     });
-    const body = (await res.json()) as ScoreResponse;
+    const body = (await res.json().catch(() => null)) as ScoreResponse | null;
     if (!res.ok) {
-      setError(failureText(body, res.status));
+      setError(domainFailureText(res.status, body));
       return;
     }
-    const snap = body.snapshot ?? body;
-    setSnapshotId(snap.id ?? snapshotId);
+    const snap = body?.snapshot ?? body ?? ({} as SnapshotBody);
+    setSnapshotId(snap?.id ?? snapshotId);
     setView(presentAssessment(asInput(snap)));
   };
 
