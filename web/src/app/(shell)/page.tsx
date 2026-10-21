@@ -39,8 +39,6 @@ import {
   todaySaveReady,
   renderLeadFacts,
   scopeCaption,
-  serviceDraftClick,
-  serviceDraftControl,
   visibleOutreach,
   attributionText,
   interactionText,
@@ -372,7 +370,6 @@ export default function Home() {
                     onFollow={(mode) => void submitFollow(item, mode)}
                     onRevise={() => void reviseDraft(item)}
                     onIgnore={() => void ignoreDraft(item)}
-                    onService={() => setDraftMsg(serviceDraftClick().message)}
                     saving={saving}
                   />
                 ))}
@@ -405,7 +402,6 @@ function TodayRow({
   onFollow,
   onRevise,
   onIgnore,
-  onService,
   saving,
 }: {
   width: number;
@@ -421,13 +417,11 @@ function TodayRow({
   onFollow: (mode: "note" | "schedule") => void;
   onRevise: () => void;
   onIgnore: () => void;
-  onService: () => void;
   saving: boolean;
 }) {
   const facts = renderLeadFacts(item, jointChain);
   const outreach = visibleOutreach(item.outreach_notice);
   const receptionLine = receptionFactLine(item);
-  const service = serviceDraftControl(item.service_draft);
   const confirmed = item.context?.facts ?? [];
   const questions = questionsFor(confirmed, item.context?.ask ?? item.ask ?? [], []);
   const tone = factTone({
@@ -498,13 +492,7 @@ function TodayRow({
               {destination.kind === "conversation" ? "在接待台打开" : destination.label}
             </Link>
           ) : null}
-          {service.present ? (
-            <Button variant="secondary" type="button" size="sm" disabled={!service.enabled} onClick={onService}>
-              创建服务需求草稿
-            </Button>
-          ) : null}
         </div>
-        {service.present && !service.enabled ? <p className="muted">{service.reason}</p> : null}
         {conversationOpen && item.session_id ? (
           <ConversationPanel
             sessionId={item.session_id}

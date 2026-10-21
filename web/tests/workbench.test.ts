@@ -16,8 +16,6 @@ import {
   renderLeadFacts,
   salesScopeIsNotOwner,
   scopeCaption,
-  serviceDraftClick,
-  serviceDraftControl,
   showServiceDraft,
   statusLine,
   syncLine,
@@ -113,16 +111,17 @@ describe("sales desk", () => {
     expect(allowedContactText(["sms", "phone", "channel"])).toBe("短信、电话、渠道内回复");
   });
 
-  it("does not show or submit a service draft unless the server says it is present", () => {
-    expect(serviceDraftControl({ present: false, enabled: false, reason: "门店销售需类别、权限和人工确认同时成立" }).present).toBe(false);
-    const disabled = serviceDraftControl({ present: true, enabled: false, reason: "需要人工确认，本轮不会把草稿交给接单应用" });
-    expect(disabled.present).toBe(true);
-    expect(disabled.enabled).toBe(false);
-    expect(disabled.reason).toContain("人工确认");
-    expect(serviceDraftClick().submitted).toBe(false);
-    expect(serviceDraftClick().outreach).toBe(false);
-    expect(serviceDraftClick().message).not.toContain("已成交");
-    expect(serviceDraftClick().message).not.toContain("自动触达已成功");
+  it("drops the service-draft ghost action instead of promising a click then refusing it", async () => {
+    // P0：按钮点击只会提示「本轮不提交」——承诺了动作又否认。本轮直接从 UI 移除，
+    // lib 导出与页面接线一并删除（HUI-1749 交接流程走 src/lib/serviceDraft，不受影响）。
+    const lib = await import("@/lib/workbench");
+    expect("serviceDraftClick" in lib).toBe(false);
+    expect("serviceDraftControl" in lib).toBe(false);
+    const home = readFileSync("src/app/(shell)/page.tsx", "utf8");
+    expect(home).not.toContain("创建服务需求草稿");
+    expect(home).not.toContain("serviceDraftClick");
+    expect(home).not.toContain("serviceDraftControl");
+    expect(home).not.toContain("onService");
   });
 
   it("shows one tenant-local fixture lead and does not paint unknown sync as followed-up", () => {

@@ -61,6 +61,13 @@ describe("today workspace structure", () => {
     expect(page()).toContain("新的咨询、到期的跟进、未回复的会话和待确认的草稿会按顺序出现在这里");
   });
 
+  it("does not resurrect the service-draft ghost button that only refused clicks", () => {
+    const src = page();
+    expect(src).not.toContain("创建服务需求草稿");
+    expect(src).not.toContain("serviceDraftClick");
+    expect(src).not.toContain("serviceDraftControl");
+  });
+
   it("SSR marks the workspace and still shows loading/recovery honestly", () => {
     const html = renderToStaticMarkup(withScope(<Home />));
     expect(html).toContain('data-pattern="workspace"');
