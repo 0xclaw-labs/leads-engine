@@ -68,14 +68,18 @@ describe("today workspace structure", () => {
     expect(src).not.toContain("serviceDraftControl");
   });
 
-  it("SSR marks the workspace and still shows loading/recovery honestly", () => {
+  it("SSR with no work scope renders only the recovery state, not competing page copy", () => {
     const html = renderToStaticMarkup(withScope(<Home />));
     expect(html).toContain('data-pattern="workspace"');
     expect(html).toContain('data-today-home="today-next"');
-    expect(html).toContain("今天要完成的客户工作");
-    expect(html).toContain("正在整理今天的工作");
-    expect(html).toContain("排序与金额口径");
-    expect(html).toContain("还没有工作范围");
+    // 壳级同款 recovery，默认标题；页内自拟文案不再与壳层状态打架。
+    expect(html).toContain("需要先选择工作范围");
+    expect(html).toContain("先在顶部选择工作范围。");
+    expect(html.match(/data-surface-state="recovery"/g)).toHaveLength(1);
+    expect(html).not.toContain("还没有工作范围");
+    expect(html).not.toContain("正在整理今天的工作");
+    expect(html).not.toContain("排序与金额口径");
+    expect(html).not.toContain("今天要完成的客户工作");
     expect(html).not.toContain("<table");
   });
 });

@@ -14,7 +14,7 @@ import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { postJson } from "@/lib/fetchJson";
-import { MISSING_SCOPE, factTone, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
+import { factTone, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import {
   HOME_SURFACE,
   NARROW_ACTIONS,
@@ -260,6 +260,17 @@ export default function Home() {
     setReload((n) => n + 1);
   }
 
+  // P0：未选工作范围时整页只渲染壳级同款 recovery（默认标题「需要先选择工作范围」）。
+  // 页内不再自拟「正在整理今天的工作」等文案与壳层状态打架。壳层 CrmShell 在 scopeFault
+  // 时根本不渲染 children，所以这里只会出现在 whoami 正常但用户未选范围的场景，不会双重叠显。
+  if (!scope.tenant) {
+    return (
+      <main data-today-home={HOME_SURFACE} data-page="today" data-pattern="workspace">
+        <SurfaceState kind="recovery" />
+      </main>
+    );
+  }
+
   return (
     <main data-today-home={HOME_SURFACE} data-page="today" data-pattern="workspace">
       <header className="page-head" data-region="header">
@@ -310,7 +321,6 @@ export default function Home() {
         </details>
       </section>
 
-      {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       {scope.tenant && err ? (
         <div data-state="error" data-region="error">
           <SurfaceState
