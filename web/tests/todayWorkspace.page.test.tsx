@@ -73,6 +73,27 @@ describe("today workspace structure", () => {
   });
 });
 
+describe("today follow submit feedback", () => {
+  const page = () => source("src/app/(shell)/page.tsx");
+
+  it("marks the submit in flight and refuses double submits", () => {
+    const src = page();
+    expect(src).toContain("const [saving, setSaving] = useState(false)");
+    expect(src).toContain("if (saving) return;");
+    expect(src).toContain("提交中…");
+    // finally 归位：失败也恢复可点，不留死按钮。
+    expect(src).toMatch(/finally\s*{\s*setSaving\(false\);\s*}/);
+  });
+
+  it("disables every follow submit while saving and reuses the draftMsg error channel", () => {
+    const src = page();
+    expect(src).toContain("disabled={followDisabled || saving}");
+    expect(src).toContain("disabled={saving || !draft.note.trim() || !draft.nextAt}");
+    expect(src).toContain("setDraftMsg(failureText(out.body, out.status))");
+    expect(src).toContain("setDraftMsg(productError((e as Error).message))");
+  });
+});
+
 describe("conversation panel structure", () => {
   it("renders an accessible, explicitly non-sending loading state", () => {
     const html = renderToStaticMarkup(
