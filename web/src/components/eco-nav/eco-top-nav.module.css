@@ -7,7 +7,7 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  background: #fff;
+  background: var(--pn-bg-surface, var(--surface));
   border-bottom: 1px solid var(--line);
   color: var(--fg);
 }
@@ -70,7 +70,7 @@
 .button {
   cursor: pointer;
   border-color: var(--line);
-  background: #fff;
+  background: var(--pn-bg-surface, var(--surface));
 }
 
 .pressed {
@@ -96,7 +96,7 @@
   right: 0;
   min-width: 160px;
   padding: 8px;
-  background: #fff;
+  background: var(--pn-bg-raised, var(--surface));
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -144,5 +144,53 @@
 
   .context > * {
     min-width: 0;
+  }
+}
+
+/* HUI-2227：应用切换 / 返回来源 / 账户与用量 / 切换错误。
+   导航在 renderer scope 外，<header> 自带 data-pn-surface，因此这里可以直接
+   消费 work.light 语义 token；括号回退只服务无 token 的公开面。 */
+.bar {
+  background: var(--pn-bg-surface, var(--surface));
+  border-bottom-color: var(--pn-border-default, var(--line));
+  color: var(--pn-text-primary, var(--fg));
+}
+
+.returnChip {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--pn-radius-control, 6px);
+  border: 1px solid var(--pn-border-default, var(--line));
+  background: var(--pn-bg-raised, var(--surface));
+  color: var(--pn-text-primary, var(--fg));
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.returnChip:hover,
+.returnChip:focus-visible {
+  border-color: var(--pn-border-focus, var(--accent));
+  outline: var(--pn-focus-width, 2px) solid var(--pn-focus-color, var(--accent));
+  outline-offset: var(--pn-focus-offset, 2px);
+}
+
+.reason {
+  margin-left: 6px;
+  color: var(--pn-text-muted, var(--muted));
+  font-style: normal;
+  font-size: 0.78rem;
+}
+
+.launchError {
+  flex-basis: 100%;
+  order: 99;
+  color: var(--pn-status-danger-fg, var(--danger));
+  font-size: 0.82rem;
+}
+
+@media (max-width: 430px) {
+  .returnChip {
+    height: 44px;
   }
 }

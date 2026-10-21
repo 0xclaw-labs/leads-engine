@@ -490,7 +490,7 @@ func (s *Store) loadDeskReception(tenantID string) ([]workbench.ReceptionView, e
 func (s *Store) loadDeskDrafts(tenantID string) ([]workbench.DraftView, error) {
 	rows, err := s.DB.Query(`
 		SELECT r.id, r.session_id, COALESCE(s.lead_id,''), COALESCE(s.owner_member_id,''),
-		       COALESCE(m.display_name,''), r.kind, r.status, r.body
+		       COALESCE(m.display_name,''), r.kind, r.status, r.body, r.created_at
 		FROM reception_replies r
 		JOIN reception_sessions s ON s.id = r.session_id AND s.tenant_id = r.tenant_id
 		LEFT JOIN members m ON m.id = s.owner_member_id AND m.tenant_id = s.tenant_id
@@ -503,7 +503,7 @@ func (s *Store) loadDeskDrafts(tenantID string) ([]workbench.DraftView, error) {
 	var out []workbench.DraftView
 	for rows.Next() {
 		var item workbench.DraftView
-		if err := rows.Scan(&item.ID, &item.SessionID, &item.LeadID, &item.Assignee, &item.OwnerLabel, &item.Kind, &item.Status, &item.Body); err != nil {
+		if err := rows.Scan(&item.ID, &item.SessionID, &item.LeadID, &item.Assignee, &item.OwnerLabel, &item.Kind, &item.Status, &item.Body, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		item.TenantID = tenantID

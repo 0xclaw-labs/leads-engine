@@ -1,0 +1,68 @@
+{
+  "surface": "work.light/light",
+  "declaredPairs": 99,
+  "checkedPairs": 99,
+  "failures": [],
+  "minRatio": {
+    "pair": "border.strong.on.bg.sunken",
+    "ratio": 3.609,
+    "minRatio": 3,
+    "fg": "#718176",
+    "bg": "#edf1ee",
+    "profile": "leads-web"
+  },
+  "maxRatio": {
+    "pair": "text.primary.on.bg.raised",
+    "ratio": 15.962,
+    "minRatio": 4.5,
+    "fg": "#192421",
+    "bg": "#ffffff",
+    "profile": "leads-web"
+  },
+  "pagePairs": [
+    {
+      "pair": "text.primary.on.bg.surface",
+      "declared": true
+    },
+    {
+      "pair": "text.primary.on.bg.raised",
+      "declared": true
+    },
+    {
+      "pair": "text.muted.on.bg.page",
+      "declared": true
+    },
+    {
+      "pair": "text.muted.on.bg.surface",
+      "declared": true
+    },
+    {
+      "pair": "text.secondary.on.bg.surface",
+      "declared": true
+    },
+    {
+      "pair": "brand.ink.on.brand.accent",
+      "declared": true
+    },
+    {
+      "pair": "brand.text.on.brand.weak",
+      "declared": true
+    },
+    {
+      "pair": "status.warning.fg.on.status.warning.weak",
+      "declared": true
+    },
+    {
+      "pair": "status.danger.fg.on.status.danger.weak",
+      "declared": true
+    },
+    {
+      "pair": "status.info.fg.on.status.info.weak",
+      "declared": true
+    },
+    {
+      "pair": "border.focus.on.bg.surface",
+      "declared": true
+    }
+  ]
+}

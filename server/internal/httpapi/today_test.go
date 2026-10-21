@@ -106,8 +106,14 @@ func TestTodayDraftCanBeEditedOrIgnoredWithoutSending(t *testing.T) {
 	draft := staff["replies"].([]any)[0].(map[string]any)
 	draftID := draft["id"].(string)
 	desk := h.mustDo("GET", "/api/v1/workbench", sessionOwnerA, tenantA, "", 200)
-	if !todayHas(desk, "ai_draft", draftID) {
-		t.Fatalf("draft missing from today: %s", mustJSON(desk["today"]))
+	// HUI-2598 D8：awaiting_approval 的会话在 human_takeover 里带草稿正文；
+	// 同一条草稿不再在 ai_draft 里重复成第二行。
+	human := todayFind(desk, "human_takeover", sid)
+	if human == nil || human["draft_body"] != draft["body"] {
+		t.Fatalf("session row missing its draft: %s", mustJSON(desk["today"]))
+	}
+	if todayHas(desk, "ai_draft", draftID) {
+		t.Fatalf("draft repeated in ai_draft: %s", mustJSON(desk["today"]))
 	}
 	revised := h.mustDo("POST", "/api/v1/workbench/drafts/"+draftID+"/revise", sessionOwnerA, tenantA, `{"body":"改成人工确认的营业时间"}`, 200)
 	if revised["sent"] == true || revised["status"] != "generated" || revised["body"] != "改成人工确认的营业时间" {
@@ -314,4 +320,57 @@ func todayFind(desk map[string]any, group, id string) map[string]any {
 		}
 	}
 	return nil
+}
+
+// HUI-2598 D8：一个会话只能占今天的一行。
+// 基线里 awaiting_approval 的会话同时进 human_takeover，它的每条草稿又进
+// ai_draft——同一段对话在“今天要处理什么”里出现 3 次，计数也是假的。
+// 修复后：会话行携带最新草稿正文，草稿行不再重复。
+func TestTodayDoesNotRepeatOneSessionAsDraftAndHandoff(t *testing.T) {
+	h := newHarnessOpts(t, harnessOpts{featureReception: true})
+	tenantA, _, _ := h.seed()
+	widget := h.mustDo("POST", "/api/v1/reception/widgets", sessionOwnerA, tenantA, `{"default_mode":"assist"}`, 201)
+	h.mustDo("POST", "/api/v1/reception/knowledge", sessionOwnerA, tenantA, `{"question":"营业时间","answer":"每天 9:00 到 18:00"}`, 201)
+	opened := h.mustDo("POST", "/api/v1/public/reception/widgets/"+widget["id"].(string)+"/sessions", "", "", `{"visitor_key":"visitor-key-dedupe"}`, 201)
+	sid := opened["session"].(map[string]any)["id"].(string)
+	h.mustDo("POST", "/api/v1/public/reception/sessions/"+sid+"/messages", "", "",
+		`{"visitor_key":"visitor-key-dedupe","client_msg_id":"m-dedupe","text":"营业时间"}`, 200)
+	const latest = "人工改过的最终口径：周末到 17:00"
+	saved := h.mustDo("POST", "/api/v1/workbench/sessions/"+sid+"/reply-draft", sessionOwnerA, tenantA,
+		`{"client_reply_id":"desk-dedupe-1","body":"`+latest+`"}`, 201)
+	savedID := saved["id"].(string)
+
+	desk := h.mustDo("GET", "/api/v1/workbench", sessionOwnerA, tenantA, "", 200)
+	raw := mustJSON(desk)
+	if strings.Count(raw, `"session_id":"`+sid+`"`) < 1 {
+		t.Fatalf("session missing from today: %s", raw)
+	}
+	human := todayFind(desk, "human_takeover", sid)
+	if human == nil {
+		t.Fatalf("session not in human_takeover: %s", raw)
+	}
+	if human["draft_body"] != latest {
+		t.Fatalf("session draft_body = %v, want latest %q", human["draft_body"], latest)
+	}
+	staff := h.mustDo("GET", "/api/v1/reception/sessions/"+sid, sessionOwnerA, tenantA, "", 200)
+	var draftIDs []string
+	for _, rawReply := range staff["replies"].([]any) {
+		reply, _ := rawReply.(map[string]any)
+		if id, _ := reply["id"].(string); id != "" {
+			draftIDs = append(draftIDs, id)
+		}
+	}
+	if len(draftIDs) < 2 {
+		t.Fatalf("expected the FAQ draft plus the saved draft, got %v", draftIDs)
+	}
+	for _, group := range []string{"ai_draft", "waiting_customer", "due_today", "new_inquiry"} {
+		for _, id := range draftIDs {
+			if todayHas(desk, group, id) {
+				t.Fatalf("draft %s repeated in %s: %s", id, group, raw)
+			}
+		}
+	}
+	if savedID == "" {
+		t.Fatal("saved draft id missing")
+	}
 }
