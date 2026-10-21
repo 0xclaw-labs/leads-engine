@@ -20,6 +20,10 @@ export const SHELL_NAV = [
   { href: "/leads", label: "线索", id: "leads" },
   { href: "/contacts", label: "客户", id: "contacts" },
   { href: "/reception", label: "接待", id: "reception" },
+  // ⑦ 两页此前全站无入口（快查见 PR 正文）：都是上游集客/筛选面，
+  // 插在接待之后、商机之前，与线索来源链同区。
+  { href: "/channel-interactions", label: "授权互动", id: "channel" },
+  { href: "/enterprises", label: "企业资料", id: "enterprises" },
   { href: "/opportunities", label: "商机", id: "opportunities" },
   { href: "/sop", label: "跟进提醒", id: "sop" },
   { href: "/outbound", label: "外呼", id: "outbound" },
