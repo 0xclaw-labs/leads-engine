@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SurfaceState } from "@/components/workbench/chrome";
-import { Button, Input } from "@/vendor/painuo/react/v1/src/index";
+import { RendererSelect } from "@/components/workbench/rendererSelect";
+import { Button, Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, domainFailureText, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import { presentSOP, recordLabel, type SOPCapability } from "@/lib/sopReach";
@@ -32,6 +33,13 @@ function consentLabel(item: ScopeConsent): string {
   const purpose = item.purpose || "授权";
   return item.source_channel ? `${purpose} · ${item.source_channel}` : purpose;
 }
+
+// ⑧ vendored renderer 控件的固定选项（≤430 触控密度随 rendererDensity 生效）。
+const CHANNEL_CHOICES = [
+  { value: "sms", label: "短信" },
+  { value: "email", label: "邮件" },
+  { value: "wecom", label: "企微" },
+] as const;
 
 export default function SOPPage() {
   const scope = useCrmScope();
@@ -190,72 +198,47 @@ export default function SOPPage() {
       </div>
       <div className="card">
         <h2>提醒和草稿</h2>
-        <p>
-          <label>
-            客户{" "}
-            <select
-              value={contactId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setContactId(id);
-                void loadConsents(tenant, id);
-              }}
-            >
-              <option value="">选择客户</option>
-              {contacts?.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-          </label>
-        </p>
+        {/* ⑧ 原生 select/textarea 换 vendored renderer 控件：交互语义与选项不变，
+            ≤430 触控密度（rendererDensity）继续生效。 */}
+        <RendererSelect
+          label="客户"
+          value={contactId}
+          onValueChange={(id) => {
+            setContactId(id);
+            void loadConsents(tenant, id);
+          }}
+          choices={[
+            { value: "", label: "选择客户" },
+            ...(contacts ?? []).map((item) => ({ value: item.id, label: item.name })),
+          ]}
+        />
         {tenant && contacts && contacts.length === 0 ? <p className="muted">还没有可选的客户</p> : null}
-        <p>
-          <label>
-            授权{" "}
-            <select value={consentId} onChange={(e) => setConsentId(e.target.value)} disabled={!marketingOpen}>
-              <option value="">不选择授权</option>
-              {consents?.map((item) => (
-                <option key={item.id} value={item.id}>{consentLabel(item)}</option>
-              ))}
-            </select>
-          </label>
-        </p>
+        <RendererSelect
+          label="授权"
+          value={consentId}
+          onValueChange={setConsentId}
+          disabled={!marketingOpen}
+          choices={[
+            { value: "", label: "不选择授权" },
+            ...(consents ?? []).map((item) => ({ value: item.id, label: consentLabel(item) })),
+          ]}
+        />
         {selected && consents && consents.length === 0 ? <p className="muted">还没有可选择的授权</p> : null}
-        <p>
-          <label>
-            渠道{" "}
-            <select value={channel} onChange={(e) => setChannel(e.target.value)}>
-              <option value="sms">短信</option>
-              <option value="email">邮件</option>
-              <option value="wecom">企微</option>
-            </select>
-          </label>{" "}
-          <label>
-            用途{" "}
-            <select
-              value={purpose}
-              onChange={(e) => {
-                const next = e.target.value;
-                if (next === "marketing" && !marketingOpen) return;
-                setPurpose(next);
-              }}
-            >
-              <option value="follow_up">跟进</option>
-              <option value="marketing" disabled={!marketingOpen}>营销</option>
-            </select>
-          </label>
-        </p>
-        <p>
-          <label>
-            <Input label="收件人" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
-          </label>
-        </p>
-        <p>
-          <label>
-            内容{" "}
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} />
-          </label>
-        </p>
+        <RendererSelect label="渠道" value={channel} onValueChange={setChannel} choices={CHANNEL_CHOICES} />
+        <RendererSelect
+          label="用途"
+          value={purpose}
+          onValueChange={(next) => {
+            if (next === "marketing" && !marketingOpen) return;
+            setPurpose(next);
+          }}
+          choices={[
+            { value: "follow_up", label: "跟进" },
+            { value: "marketing", label: "营销", disabled: !marketingOpen, disabledReason: "还没有可选择的授权" },
+          ]}
+        />
+        <Input label="收件人" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+        <Textarea label="内容" value={body} onChange={(e) => setBody(e.target.value)} rows={3} />
         {/* HUI-2626 fix2（gate-r2 #6 主行动收敛）：主行动只在可执行时出现；
             不可执行时给下一步指引，不再渲染一排等权灰按钮。次级动作保持 secondary。 */}
         {payload ? (
