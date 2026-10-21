@@ -251,6 +251,101 @@ describe("sales workbench shell", () => {
     expect(listTenantHeader(denied.memoryTenantId)?.["x-tenant-id"] ?? "").not.toBe("tenant-a");
   });
 
+  it("types the entry failure instead of folding every dead end into one sentence", async () => {
+    const fixture = scopeChoices([{ tenant_id: "tenant-real", display_name: "真实客户" }]);
+    // 匿名会话（401，body error=unauthenticated）：未登录，不是无范围，也不是服务故障。
+    const anonymous = await runShellWhoami({
+      storedId: null,
+      membershipScopes: fixture,
+      fetchImpl: async () => ({ ok: false, status: 401, body: { error: "unauthenticated", message: "no session" } }),
+    });
+    expect(anonymous.ok).toBe(false);
+    expect(anonymous.failure).toBe("unauthenticated");
+    expect(anonymous.memoryTenantId).toBeNull();
+    expect(anonymous.fault).toContain("没有可用的工作范围");
+
+    // 没有 status 的桩也能凭 body.error 识别未登录。
+    const byBody = await runShellWhoami({
+      storedId: null,
+      membershipScopes: fixture,
+      fetchImpl: async () => ({ ok: false, body: { error: "unauthenticated" } }),
+    });
+    expect(byBody.failure).toBe("unauthenticated");
+
+    // 已登录但没有成员关系（403）：无范围。
+    const forbidden = await runShellWhoami({
+      storedId: null,
+      membershipScopes: fixture,
+      fetchImpl: async () => ({ ok: false, status: 403, body: { error: "forbidden" } }),
+    });
+    expect(forbidden.failure).toBe("no_scope");
+
+    // 5xx：服务不可达。
+    const down = await runShellWhoami({
+      storedId: null,
+      membershipScopes: fixture,
+      fetchImpl: async () => ({ ok: false, status: 503, body: { error: "server_unavailable" } }),
+    });
+    expect(down.failure).toBe("unreachable");
+
+    // 网络异常：服务不可达，不是未登录。
+    const offline = await runShellWhoami({
+      storedId: "tenant-real",
+      membershipScopes: fixture,
+      fetchImpl: async () => {
+        throw new Error("Failed to fetch");
+      },
+    });
+    expect(offline.failure).toBe("unreachable");
+    expect(offline.requestedTenant).toBe("tenant-real");
+
+    // whoami 通了但没有会话租户、存储租户也不在允许集合：无范围，不是服务故障。
+    const empty = await runShellWhoami({
+      storedId: "tenant-elsewhere",
+      membershipScopes: fixture,
+      fetchImpl: async () => ({ ok: true, status: 200, body: {} }),
+    });
+    expect(empty.ok).toBe(true);
+    expect(empty.failure).toBe("no_scope");
+    expect(empty.memoryTenantId).toBeNull();
+
+    // 确认范围后没有故障。
+    const confirmed = await runShellWhoami({
+      storedId: "tenant-real",
+      membershipScopes: fixture,
+      fetchImpl: async () => ({ ok: true, status: 200, body: { tenant_id: "tenant-real" } }),
+    });
+    expect(confirmed.memoryTenantId).toBe("tenant-real");
+    expect(confirmed.failure).toBeNull();
+    expect(confirmed.fault).toBe("");
+  });
+
+  it("labels the empty scope bar honestly: 未登录 when signed out, 未选择 by default", () => {
+    const signedOut = renderToStaticMarkup(
+      createElement(WorkbenchChrome, {
+        width: 1440,
+        scopes: [],
+        activeId: null,
+        onSwitch: () => undefined,
+        scopeEmptyLabel: "未登录",
+        children: null,
+      }),
+    );
+    expect(signedOut).toContain("未登录");
+    expect(signedOut).not.toContain("未选择");
+    const fallback = renderToStaticMarkup(
+      createElement(WorkbenchChrome, {
+        width: 1440,
+        scopes: [],
+        activeId: null,
+        onSwitch: () => undefined,
+        children: null,
+      }),
+    );
+    expect(fallback).toContain("未选择");
+    expect(fallback).not.toContain("未登录");
+  });
+
   it("drops a late lead list after the tenant switches or clears", async () => {
     const pending = new Map<string, (rows: { id: string }[]) => void>();
     const fetchRows = (tenant: string) =>

@@ -14,14 +14,62 @@ import { blockedEcoNavModel, parseEcoNavView } from "@/lib/eco-nav/load";
 import type { EcoNavModel } from "@/lib/eco-nav/model";
 import { shouldMountEcoTopNav } from "@/lib/eco-nav/mount";
 import { commitCrmTenant, hydrateCrmTenantFromStorage, releaseCrmTenant, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { failureText, guardTenantCommit, rendererDensity, runShellWhoami, scopeChoices, type WorkScope } from "@/lib/productShell";
+import {
+  SCOPE_UNAVAILABLE,
+  failureText,
+  guardTenantCommit,
+  rendererDensity,
+  runShellWhoami,
+  scopeChoices,
+  type ShellEntryFailure,
+  type WorkScope,
+} from "@/lib/productShell";
 import { RendererProvider } from "@/vendor/painuo/react/v1/src/index";
+
+// 入口三种死路分开指路：未登录给入口指引（不伪造登录链接）、无范围给管理员路径、
+// 服务不可达给网络自查。都用 recovery/error 的可恢复态，不再用无处可去的死胡同 error。
+const ENTRY_STATE_COPY: Record<ShellEntryFailure, { kind: "recovery" | "error"; title: string; detail: string }> = {
+  unauthenticated: {
+    kind: "recovery",
+    title: "请先登录后进入工作台",
+    detail: "获客工作台不提供独立登录页；请从数海观澜生态工作台登录后进入，或联系管理员开通访问。",
+  },
+  no_scope: {
+    kind: "recovery",
+    title: "没有可用的工作范围",
+    detail: `${SCOPE_UNAVAILABLE}若刚被加入项目，请让主管理员确认成员关系后重试。`,
+  },
+  unreachable: {
+    kind: "error",
+    title: "服务暂时没有响应",
+    detail: "请检查网络后重试。",
+  },
+};
+
+export function CrmEntryState({ failure, onRetry }: { failure: ShellEntryFailure; onRetry: () => void }) {
+  const copy = ENTRY_STATE_COPY[failure];
+  return (
+    <SurfaceState
+      kind={copy.kind}
+      title={copy.title}
+      detail={copy.detail}
+      action={
+        <button type="button" className="btn" onClick={onRetry}>
+          重试
+        </button>
+      }
+    />
+  );
+}
 
 function DeskFrame({
   scopes,
+  scopeEmptyLabel,
   children,
 }: {
   scopes: WorkScope[];
+  /** 未确认任何范围时范围条的文案；未登录时由壳传入“未登录”。 */
+  scopeEmptyLabel?: string;
   children: ReactNode;
 }) {
   const width = useShellWidth();
@@ -41,6 +89,7 @@ function DeskFrame({
         width={width}
         scopes={scopes}
         activeId={scope.tenant}
+        scopeEmptyLabel={scopeEmptyLabel}
         onSwitch={(tenant) => {
           const chosen = guardTenantCommit(scopes, tenant);
           if (chosen) commitCrmTenant(chosen);
@@ -63,7 +112,7 @@ export function CrmShell({
   const scope = useCrmScope();
   const [authenticated, setAuthenticated] = useState(false);
   const [nickname, setNickname] = useState("账户");
-  const [scopeFault, setScopeFault] = useState("");
+  const [entryFailure, setEntryFailure] = useState<ShellEntryFailure | null>(null);
   const [switcher, setSwitcher] = useState<WorkScope[]>([]);
   const [navModel, setNavModel] = useState<EcoNavModel | null>(model ?? null);
   const [navFault, setNavFault] = useState("");
@@ -71,31 +120,36 @@ export function CrmShell({
   const [launchBusy, setLaunchBusy] = useState(false);
   const [navReload, setNavReload] = useState(0);
   const navTicket = useRef({ seq: 0, tenant: "" });
+  // 会话对账票据：重试与在途请求竞态时，只采纳最新一次的结果。
+  const sessionTicket = useRef(0);
 
-  useEffect(() => {
+  // 挂载与「重试」共用同一套对账流程。用票据替代 effect 里的 cancelled 标记，
+  // 这样按钮触发的重跑能作废仍在途的上一次结果，不出现旧答案覆盖新答案。
+  const reconcileSession = useCallback(() => {
+    const ticket = sessionTicket.current + 1;
+    sessionTicket.current = ticket;
     hydrateCrmTenantFromStorage();
     setSwitcher([]);
-    let cancelled = false;
     const stored = (window.localStorage.getItem(CRM_TENANT_STORAGE_KEY) ?? "").trim() || null;
     void runShellWhoami({
       storedId: stored,
       membershipScopes: scopeChoices(model?.scopes ?? []),
     }).then((result) => {
-      if (cancelled) return;
+      if (sessionTicket.current !== ticket) return;
       setAuthenticated(result.ok);
       setNickname(result.email || "账户");
       setSwitcher(result.switcher);
+      setEntryFailure(result.failure);
       if (!result.memoryTenantId) {
-        setScopeFault(result.fault);
         releaseCrmTenant();
         return;
       }
-      setScopeFault("");
       if (result.persist && result.storage) commitCrmTenant(result.storage);
     });
-    return () => {
-      cancelled = true;
-    };
+  }, [model]);
+
+  useEffect(() => {
+    reconcileSession();
     // 只在挂载时对账一次；租户切换由 scope.tenant 变化驱动导航重载。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -201,8 +255,8 @@ export function CrmShell({
             </button>
           </div>
         ) : null}
-        <DeskFrame scopes={switcher}>
-          {scopeFault ? <SurfaceState kind="error" title="工作范围不可用" detail={scopeFault} /> : children}
+        <DeskFrame scopes={switcher} scopeEmptyLabel={entryFailure === "unauthenticated" ? "未登录" : undefined}>
+          {entryFailure ? <CrmEntryState failure={entryFailure} onRetry={() => reconcileSession()} /> : children}
         </DeskFrame>
       </div>
     </ShellWidthProvider>
