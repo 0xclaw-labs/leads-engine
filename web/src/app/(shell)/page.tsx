@@ -32,6 +32,7 @@ import {
   questionsFor,
   receptionFactLine,
   recallToday,
+  restoredDraftCount,
   searchToken,
   readTodayMemory,
   reviseBody,
@@ -104,6 +105,10 @@ export default function Home() {
   const [draftMsg, setDraftMsg] = useState("");
   // P0：「记跟进」提交反馈——提交中禁用按钮防重复提交，失败恢复可点并走 draftMsg 错误通道。
   const [saving, setSaving] = useState(false);
+  // ⑪ 草稿恢复提示：recallToday 真正恢复了带内容的草稿时展示一次；关闭后本会话不再弹
+  //（useState，不入 storage）。
+  const [restoredCount, setRestoredCount] = useState(0);
+  const [restoreNoteClosed, setRestoreNoteClosed] = useState(false);
   const [focusId, setFocusId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, TodayDraft>>({});
   const [conversationFor, setConversationFor] = useState("");
@@ -114,6 +119,7 @@ export default function Home() {
     const restored = recallToday(readTodayMemory(), scope.tenant);
     const focus = searchToken(new URLSearchParams(window.location.search).get("focus"));
     setDrafts(restored.drafts);
+    setRestoredCount(restoredDraftCount(restored.drafts));
     setFocusId(focus || restored.focusId);
     setConversationFor("");
     appliedTenant.current = null;
@@ -282,6 +288,14 @@ export default function Home() {
       </header>
 
       {draftMsg ? <p className="muted" role="status">{draftMsg}</p> : null}
+      {restoredCount > 0 && !restoreNoteClosed ? (
+        <p className="muted" role="status" data-today-restore-note="true">
+          已恢复上次未提交的草稿（{restoredCount} 条）。
+          <Button variant="ghost" type="button" size="sm" onClick={() => setRestoreNoteClosed(true)}>
+            知道了
+          </Button>
+        </p>
+      ) : null}
 
       <section className="attention-strip" data-region="status" aria-label="今天的注意力">
         {visible && !attention.empty ? (

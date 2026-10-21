@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SurfaceState } from "@/components/workbench/chrome";
 import { Button } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
+import { MISSING_SCOPE, domainFailureText, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import { outboundResultLine, presentOutbound, receiptLabel, type OutboundCapability } from "@/lib/outboundCall";
 import {
   campaignChoice,
@@ -79,9 +79,10 @@ export default function OutboundPage() {
         fetch("/api/contacts", { headers: h }),
       ]);
       if (loadSeq.current !== seq) return;
-      const body = (await capRes.json()) as OutboundCapability & { message?: string; error?: string };
+      // ⑥ flag 域初次加载：解析失败（mux text/plain 404）按「功能未开通」指引。
+      const body = (await capRes.json().catch(() => null)) as (OutboundCapability & { message?: string; error?: string }) | null;
       setView(presentOutbound(body));
-      if (!capRes.ok) setError(failureText(body, capRes.status));
+      if (!capRes.ok) setError(domainFailureText(capRes.status, body));
       let nextContacts: ScopeContact[] = [];
       if (contactRes.ok) {
         const contactBody = await contactRes.json().catch(() => null);

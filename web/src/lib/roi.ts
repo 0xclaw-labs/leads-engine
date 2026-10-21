@@ -120,3 +120,34 @@ export const STATUS_LABELS: Record<string, string> = {
   incomplete: "数据不完整",
   complete: "按收入口径分开的 ROI",
 };
+
+// ⑨ 引用 JSON 的提交前校验：引用是七类数组组成的复合文档，不适合拍平成结构化
+// 字段，保留 JSON 输入；但解析失败要给出可读的具体位置并阻止提交，不再只说
+// 「引用没有读成可复算的记录」。返回 null 表示通过（空输入也算通过，走空引用复算）。
+export function citationJsonError(raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return null;
+  let message = "";
+  try {
+    JSON.parse(text);
+    return null;
+  } catch (e) {
+    message = e instanceof Error ? e.message : "";
+  }
+  const lineCol = /line (\d+) column (\d+)/.exec(message);
+  if (lineCol) {
+    return `引用不是有效的 JSON：第 ${lineCol[1]} 行第 ${lineCol[2]} 列附近有格式错误，请检查标点与括号后再复算。`;
+  }
+  const at = /at position (\d+)/.exec(message);
+  if (at) {
+    const before = text.slice(0, Number(at[1]));
+    const line = before.split("\n").length;
+    const column = before.length - (before.lastIndexOf("\n") + 1) + 1;
+    return `引用不是有效的 JSON：第 ${line} 行第 ${column} 列附近有格式错误，请检查标点与括号后再复算。`;
+  }
+  if (/Unexpected token/.test(message)) {
+    return "引用不是有效的 JSON：有一个放错位置的符号，请检查标点与括号后再复算。";
+  }
+  // 意外截断（如 Unexpected end of JSON input）。
+  return "引用不是有效的 JSON，内容可能没有写完，请检查是否缺少结尾的括号后再复算。";
+}

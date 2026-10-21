@@ -20,6 +20,10 @@ export const SHELL_NAV = [
   { href: "/leads", label: "线索", id: "leads" },
   { href: "/contacts", label: "客户", id: "contacts" },
   { href: "/reception", label: "接待", id: "reception" },
+  // ⑦ 两页此前全站无入口（快查见 PR 正文）：都是上游集客/筛选面，
+  // 插在接待之后、商机之前，与线索来源链同区。
+  { href: "/channel-interactions", label: "授权互动", id: "channel" },
+  { href: "/enterprises", label: "企业资料", id: "enterprises" },
   { href: "/opportunities", label: "商机", id: "opportunities" },
   { href: "/sop", label: "跟进提醒", id: "sop" },
   { href: "/outbound", label: "外呼", id: "outbound" },
@@ -221,6 +225,25 @@ export async function runShellWhoami(input: {
 
 export function guardTenantCommit(switcher: WorkScope[], tenant: string): string | null {
   return chooseScope(switcher, tenant)?.tenant_id ?? null;
+}
+
+// ⑥ 登记制 flag（FEATURE_SOP_REACH / FEATURE_OUTBOUND_CALL / FEATURE_INTENT_GRADE /
+// FEATURE_RECEPTION 等）关闭时路由不注册，Go mux 以 text/plain「404 page not found」
+// 应答，前端解析不出 JSON 形体；记录级 404 一定是服务端 fail() 的 JSON
+//（error + message 字段都在）。因此「404 且解析不出 fail 形状」即功能未开通，
+// 映射为开通指引，不再冒充「这条记录不存在」。body 传解析结果（解析失败为 null）。
+export const FEATURE_CLOSED_TEXT = "该功能未开通，请联系管理员开通。";
+
+export function flagClosedText(status: number | undefined, body: unknown): string | null {
+  if (status !== 404) return null;
+  const record = (typeof body === "object" && body !== null ? body : {}) as { error?: unknown };
+  const shaped = typeof record.error === "string" && record.error.trim() !== "";
+  return shaped ? null : FEATURE_CLOSED_TEXT;
+}
+
+// flag 域页面错误映射的统一入口：flag 关闭给开通指引，其余沿用 failureText 语义。
+export function domainFailureText(status: number | undefined, body: unknown): string {
+  return flagClosedText(status, body) ?? failureText(body ?? {}, status);
 }
 
 export function nextLeadTicket(previousSeq: number, tenant: string): { seq: number; tenant: string } {

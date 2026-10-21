@@ -14,7 +14,7 @@ import {
   type FollowupRow,
 } from "@/lib/contact";
 import { SurfaceState } from "@/components/workbench/chrome";
-import { Button, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Button, ConfirmDialog, Input } from "@/vendor/painuo/react/v1/src/index";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, pagePrimary, productError } from "@/lib/productShell";
 
@@ -68,6 +68,8 @@ export default function ContactDetailPage() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [followupNote, setFollowupNote] = useState("");
+  // ⑩ 删除确认改应用内 ConfirmDialog，不再用浏览器原生确认框。
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [edit, setEdit] = useState({ name: "", phone: "", email: "", notes: "", tags: "" });
 
   const load = useCallback(async () => {
@@ -156,7 +158,6 @@ export default function ContactDetailPage() {
   };
 
   const removeProfile = async () => {
-    if (!window.confirm("确认删除该客户档案?删除后所有角色不可再访问,授权与跟进记录将依法保留最小审计。")) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/contacts/${id}`, scopeInit(scope.tenant, { method: "DELETE" }));
@@ -310,9 +311,24 @@ export default function ContactDetailPage() {
             软删除:档案脱敏占位并对所有角色不可见;授权与跟进记录依法保留最小审计。
             与「停止营销」相互独立:删除不复权,停止营销不删档。
           </p>
-          <Button variant="danger" type="button" size="sm" loading={busy} onClick={removeProfile}>删除该档案</Button>
+          <Button variant="danger" type="button" size="sm" loading={busy} onClick={() => setConfirmDeleteOpen(true)}>删除该档案</Button>
         </div>
       ) : null}
+
+      {/* ⑩ 应用内确认：语义与文案保持原浏览器确认框的原意，删除为 danger。 */}
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="确认删除该客户档案"
+        consequence="删除后所有角色不可再访问,授权与跟进记录将依法保留最小审计。"
+        confirmLabel="删除"
+        cancelLabel="取消"
+        danger
+        onConfirm={async () => {
+          setConfirmDeleteOpen(false);
+          await removeProfile();
+        }}
+      />
 
       {msg ? <p className="muted">{msg}</p> : null}
       <p>
