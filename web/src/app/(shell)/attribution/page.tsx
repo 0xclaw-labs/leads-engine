@@ -8,7 +8,7 @@ import { Button } from "@/vendor/painuo/react/v1/src/index";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError, rendererDensity } from "@/lib/productShell";
 import { roiStatusToState } from "@/lib/painuoStatus";
-import { centsText, presentRoi, STATUS_LABELS, type RoiReport } from "@/lib/roi";
+import { centsText, citationJsonError, presentRoi, STATUS_LABELS, type RoiReport } from "@/lib/roi";
 
 // HUI-1696 来源链与费用复算页。只打本站 BFF。页面不保存第二份线索或费用。
 
@@ -27,6 +27,15 @@ export default function AttributionPage() {
       setReport(null);
       return;
     }
+    // ⑨ 引用是七类数组组成的复合文档，保留 JSON 输入；提交前校验，
+    // 非法 JSON 给出可读的具体位置并阻止提交。
+    const invalid = citationJsonError(raw);
+    if (invalid) {
+      setErr(invalid);
+      setReport(null);
+      return;
+    }
+    setErr("");
     let body: unknown;
     try {
       body = raw.trim() ? JSON.parse(raw) : {};
