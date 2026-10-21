@@ -292,7 +292,8 @@ export default function LeadDeskPage() {
             />
             <DateTimeField label="下一次" value={nextAt} onChange={setNextAt} />
             <div className="queue-actions">
-              <Link className="btn" href={`/leads/${id}`} data-desk-action={NARROW_ACTIONS[0]}>{NARROW_ACTIONS[0]}</Link>
+              {/* P0：原链接 href 指向 /leads/${id}（详情页自己），点了原地不动；收敛为返回线索列表。 */}
+              <Link className="btn" href="/leads">返回线索列表</Link>
               <Button
                 variant="primary"
                 type="button"
