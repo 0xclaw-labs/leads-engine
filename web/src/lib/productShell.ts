@@ -29,6 +29,15 @@ export const SHELL_NAV = [
 
 export const MISSING_SCOPE = "先在顶部选择工作范围。";
 
+// P0 导航高亮：当前页判定。"/" 只做全等匹配；其余项命中本页或子页
+// （/leads 命中 /leads/:id，不命中 /leadsxxx）。只消费路径，不吃查询串与锚点。
+export function isNavActive(pathname: string | null | undefined, href: string): boolean {
+  const path = (pathname ?? "").split("?")[0].split("#")[0];
+  if (!path) return false;
+  if (href === "/") return path === "/";
+  return path === href || path.startsWith(`${href}/`);
+}
+
 const PAGE_PRIMARY: Record<string, string> = {
   today: "记跟进",
   leads: "打开线索",
