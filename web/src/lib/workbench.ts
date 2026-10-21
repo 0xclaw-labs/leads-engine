@@ -411,6 +411,12 @@ export function persistTodayMemory(memory: TodayMemory): void {
   window.localStorage.setItem(TODAY_MEMORY_KEY, JSON.stringify(memory));
 }
 
+// ⑪ 草稿恢复提示的计数：只有带内容的草稿才算「恢复了一条」；只点过输入框
+// 的空壳（note 与 nextAt 都为空）是焦点残留，不当成未提交的草稿惊动用户。
+export function restoredDraftCount(drafts: Record<string, TodayDraft>): number {
+  return Object.values(drafts).filter((draft) => (draft?.note ?? "").trim() !== "" || (draft?.nextAt ?? "").trim() !== "").length;
+}
+
 // todaySaveReady is false on the render that still holds the previous tenant's drafts.
 // appliedTenant stays null until that restore has been applied, so the other tenant is not overwritten.
 export function todaySaveReady(appliedTenant: string | null, tenant: string | null): boolean {
