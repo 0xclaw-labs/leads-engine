@@ -19,12 +19,31 @@ import {
   type PublicFormDescriptor,
   type SubmissionSuccess,
 } from "@/lib/publicForm";
+import { publicFailureText } from "@/lib/productShell";
 
 const FIELD_LABELS: Record<string, string> = {
   name: "称呼",
   phone: "手机号",
   wechat: "微信号(选填)",
 };
+
+// 服务端校验 message(英文)不直出：按 field 给游客可读的中文提示。
+// 字段白名单与服务端 form_domain.go 对齐(name/phone/wechat)；
+// 未映射字段一律「请检查填写内容」。
+const FIELD_ISSUE_HINTS: Record<string, string> = {
+  name: "请填写姓名",
+  phone: "请输入 11 位大陆手机号",
+  wechat: "请填写正确的微信号",
+};
+
+const SUBMIT_FAILURE_TEXT = "提交没有完成，请稍后重试或联系我们";
+
+function issueText(iss: FieldIssue): string {
+  // 本地 guardSubmission 产出的已是中文产品语句,原样使用;
+  // 服务端英文校验句(form_domain.go)按字段映射,未映射字段给通用提示。
+  if (/[\u4e00-\u9fff]/.test(iss.message ?? "")) return iss.message;
+  return FIELD_ISSUE_HINTS[iss.field] ?? "请检查填写内容";
+}
 
 function newPageRef(): string {
   // 页面级 source_ref:同一次访问的重试共享(幂等),刷新/新访问产生新引用。
@@ -93,9 +112,10 @@ function Landing() {
         setIssues(body.details as FieldIssue[]);
         return;
       }
-      setServerError(body.message ?? `提交失败(HTTP ${res.status})`);
-    } catch (e) {
-      setServerError((e as Error).message);
+      setServerError(publicFailureText(body, SUBMIT_FAILURE_TEXT));
+    } catch {
+      // 网络层异常(如 fetch 失败)不向访客透出浏览器英文 message。
+      setServerError(SUBMIT_FAILURE_TEXT);
     } finally {
       setSubmitting(false);
     }
@@ -153,7 +173,7 @@ function Landing() {
       <div className="card">
         {fields.map((f) => (
           <div key={f.name} style={{ marginBottom: 12 }}>
-            <label htmlFor={`f-${f.name}`}>{FIELD_LABELS[f.name] ?? f.name}</label>
+            <label htmlFor={`f-${f.name}`}>{FIELD_LABELS[f.name] ?? "其他信息"}</label>
             <br />
             <input
               id={`f-${f.name}`}
@@ -176,7 +196,7 @@ function Landing() {
         </label>
         {issues.map((iss, i) => (
           <p key={i} style={{ color: "#b00" }}>
-            {FIELD_LABELS[iss.field] ?? iss.field}:{iss.message}
+            {FIELD_LABELS[iss.field] ?? "其他信息"}：{issueText(iss)}
           </p>
         ))}
         {serverError ? <p style={{ color: "#b00" }}>{serverError}</p> : null}

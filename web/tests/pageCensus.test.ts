@@ -206,15 +206,15 @@ describe("page census", () => {
 
     const form = rows.find((row) => row.path === "/f/[id]");
     expect(form?.half_product).toEqual([
-      { marker: "inline style", line: 155, column: 29 },
-      { marker: "raw input", line: 158, column: 13 },
-      { marker: "inline style", line: 169, column: 15 },
-      { marker: "raw input", line: 174, column: 11 },
-      { marker: "inline style", line: 178, column: 22 },
-      { marker: "bare hex", line: 178, column: 39 },
-      { marker: "inline style", line: 182, column: 27 },
-      { marker: "bare hex", line: 182, column: 44 },
-      { marker: "raw button", line: 183, column: 9 },
+      { marker: "inline style", line: 175, column: 29 },
+      { marker: "raw input", line: 178, column: 13 },
+      { marker: "inline style", line: 189, column: 15 },
+      { marker: "raw input", line: 194, column: 11 },
+      { marker: "inline style", line: 198, column: 22 },
+      { marker: "bare hex", line: 198, column: 39 },
+      { marker: "inline style", line: 202, column: 27 },
+      { marker: "bare hex", line: 202, column: 44 },
+      { marker: "raw button", line: 203, column: 9 },
     ]);
     // HUI-2626 finish-r1 半成品账目（gate-r2 fix2 消化后终态）：
     // - 全部 work 面路由（/ /leads /leads/[id] /contacts /opportunities

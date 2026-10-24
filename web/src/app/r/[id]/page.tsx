@@ -3,8 +3,13 @@
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { MODE_TEXT, PENDING_TEXT, RECEPTION_GREETING, newVisitorKey } from "@/lib/reception";
+import { publicFailureText } from "@/lib/productShell";
 
 // 自有 H5 接待（HUI-1688）。只打本站 BFF。访客钥匙留在本机，不注册账号。
+
+// 访客页错误收口：服务端英文 message/HTTP 码不直出（BFF 未配置映射「服务暂不可用」，
+// 见 publicFailureText），其余失败统一这句。
+const ACTION_FAILURE_TEXT = "操作没有完成，请稍后重试";
 
 interface PublicWidget {
   id: string;
@@ -69,7 +74,7 @@ export default function ReceptionH5Page() {
     const res = await fetch(`/api/public/reception/sessions/${sessionID}?visitor_key=${encodeURIComponent(key)}`);
     const body = await res.json();
     if (!res.ok) {
-      if (!quiet) setError(body.message ?? body.error ?? `HTTP ${res.status}`);
+      if (!quiet) setError(publicFailureText(body, ACTION_FAILURE_TEXT));
       return;
     }
     setSession(body.session);
@@ -93,7 +98,7 @@ export default function ReceptionH5Page() {
       const widgetRes = await fetch(`/api/public/reception/widgets/${widgetID}`);
       const widgetBody = await widgetRes.json();
       if (!widgetRes.ok) {
-        if (!cancelled) setError(widgetBody.message ?? widgetBody.error ?? `HTTP ${widgetRes.status}`);
+        if (!cancelled) setError(publicFailureText(widgetBody, ACTION_FAILURE_TEXT));
         return;
       }
       if (cancelled) return;
@@ -106,13 +111,13 @@ export default function ReceptionH5Page() {
       });
       const openBody = await openRes.json();
       if (!openRes.ok) {
-        if (!cancelled) setError(openBody.message ?? openBody.error ?? `HTTP ${openRes.status}`);
+        if (!cancelled) setError(publicFailureText(openBody, ACTION_FAILURE_TEXT));
         return;
       }
       if (cancelled) return;
       setSession(openBody.session);
       await loadTranscript(openBody.session.id, key);
-    })().catch((e: Error) => setError(e.message));
+    })().catch(() => setError(ACTION_FAILURE_TEXT));
     return () => {
       cancelled = true;
     };
@@ -135,14 +140,15 @@ export default function ReceptionH5Page() {
       });
       const body = await res.json();
       if (!res.ok) {
-        setError(body.message ?? body.error ?? `HTTP ${res.status}`);
+        setError(publicFailureText(body, ACTION_FAILURE_TEXT));
         return;
       }
       setText("");
       if (body.session) setSession(body.session);
       await loadTranscript(session.id, key);
-    } catch (e) {
-      setError((e as Error).message);
+    } catch {
+      // 网络层异常(如 fetch 失败)不向访客透出浏览器英文 message。
+      setError(ACTION_FAILURE_TEXT);
     } finally {
       setSending(false);
     }
@@ -151,7 +157,7 @@ export default function ReceptionH5Page() {
   const mode = session?.mode ?? "ai";
   return (
     <main className="chat-shell">
-      <p className="muted"><a href="/">返回工作台</a></p>
+      <p className="muted"><a href="/">返回商家主页</a></p>
       <h1>在线接待</h1>
       <p className="muted">{widget?.greeting || RECEPTION_GREETING}</p>
       <div className="chat-meta">
@@ -170,7 +176,7 @@ export default function ReceptionH5Page() {
             <div key={turn.key} className={turn.side === "visitor" ? "bubble visitor" : "bubble shop"}>
               <p>{turn.body}</p>
               {turn.reply?.citations?.length ? (
-                <p className="fine">依据 {turn.reply.citations.map((item) => `${item.kind ?? "faq"} ${item.source_id ?? ""} v${item.version ?? ""}`).join("、")}</p>
+                <p className="fine">已依据店内知识（{turn.reply.citations.length} 条）</p>
               ) : null}
               {turn.reply?.gaps?.length ? (
                 <p className="fine">{turn.reply.gaps.map((gap) => GAP_TEXT[gap.code ?? ""] ?? gap.code).join(" · ")}</p>
@@ -196,7 +202,7 @@ export default function ReceptionH5Page() {
           disabled={!session}
           onClick={() => {
             if (!session) return;
-            void loadTranscript(session.id, visitorKey()).catch((e: Error) => setError(e.message));
+            void loadTranscript(session.id, visitorKey()).catch(() => setError(ACTION_FAILURE_TEXT));
           }}
         >
           刷新对话
