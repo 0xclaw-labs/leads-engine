@@ -327,6 +327,21 @@ export function failureText(body: unknown, status?: number): string {
   return productError(text);
 }
 
+// 游客可达公开页（/f、/r）的错误收口：比 failureText 更严格——
+// 工作台的 failureText 会放行短英文 message（productError 兜底逻辑），公开页
+// 不允许任何英文机器串透出，只透传中文产品语句；BFF 未配置/服务不可达
+// （fail-closed 503 族）统一映射为「服务暂不可用」。其余一律走调用方给的
+// 固定中文 fallback。
+export function publicFailureText(body: unknown, fallback: string): string {
+  const record = (typeof body === "object" && body !== null ? body : {}) as { message?: unknown; error?: unknown };
+  const code = typeof record.error === "string" ? record.error : "";
+  if (code === "bff_config_gate" || code === "server_unavailable") return "服务暂不可用，请稍后重试";
+  const raw = record.message || record.error || "";
+  const text = typeof raw === "string" ? raw.trim() : "";
+  const productVoice = text.length > 0 && text.length <= 280 && !TECHNICAL.test(text) && /[\u4e00-\u9fff]/.test(text);
+  return productVoice ? text : fallback;
+}
+
 export type FactTone = "ai" | "human" | "automation";
 
 export function factTone(input: { kind?: string; auto?: boolean }): FactTone {

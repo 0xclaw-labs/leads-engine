@@ -11,7 +11,7 @@ import "../vendor/painuo/react/v1/src/styles.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "数海获客 · leads-engine",
+  title: "数海获客",
   description: "独立商家 CRM(L0 底座):联系人 / 线索 / 商机",
 };
 
