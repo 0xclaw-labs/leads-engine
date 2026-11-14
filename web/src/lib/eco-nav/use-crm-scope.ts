@@ -11,6 +11,17 @@ function emit() {
   listeners.forEach((listener) => listener());
 }
 
+export function currentCrmScopeEpoch(): number {
+  return cache.epoch;
+}
+
+// A successful SSO exchange starts a new account context even if its tenant
+// happens to have the same ID. In-flight reconciliation must lose its ticket.
+export function resetCrmScope() {
+  cache = { ...emptyCrmCache(), epoch: cache.epoch + 1 };
+  emit();
+}
+
 export function commitCrmTenant(next: string) {
   const updated = switchCrmTenant(cache, next);
   if (updated === cache) return;

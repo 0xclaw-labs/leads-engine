@@ -4,8 +4,9 @@
  * leads-engine_* cookie（本应用不写、不解析凭据）。
  */
 import { request as httpRequest } from "node:http";
+import { readSsoAppHost } from "@/lib/sso-host";
+export { LEADS_APP_HOST, hostAllowed } from "@/lib/sso-host";
 
-export const LEADS_APP_HOST = "leads.modelxing.com";
 export const IDENTITY_SSO_EXCHANGE_DEFAULT = "http://127.0.0.1:18101/api/auth/sso/exchange";
 
 export type SsoBridgeConfig = { exchangeURL: string; appHost: string };
@@ -13,7 +14,7 @@ export type SsoBridgeConfig = { exchangeURL: string; appHost: string };
 export function readSsoBridgeConfig(env: Record<string, string | undefined> = process.env): SsoBridgeConfig {
   return {
     exchangeURL: (env.IDENTITY_SSO_EXCHANGE_URL ?? "").trim() || IDENTITY_SSO_EXCHANGE_DEFAULT,
-    appHost: (env.SSO_APP_HOST ?? "").trim() || LEADS_APP_HOST,
+    appHost: readSsoAppHost(env),
   };
 }
 
@@ -39,15 +40,6 @@ export function safeReturnPath(raw: unknown): string {
   } catch {
     return "/";
   }
-}
-
-export function hostAllowed(hostHeader: string | null, forwardedHost: string | null, appHost: string): boolean {
-  const hosts = [hostHeader, forwardedHost].filter((h): h is string => !!h);
-  if (hosts.length === 0) return false;
-  return hosts.every((h) => {
-    const bare = h.split(":")[0].toLowerCase();
-    return bare === appHost || bare === `www.${appHost}`;
-  });
 }
 
 export function sameOriginPost(

@@ -68,7 +68,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return failure("failed");
   }
 
-  const res = NextResponse.redirect(new URL(safeReturnPath(returnTarget), "https://leads.modelxing.com"), 303);
+  const res = NextResponse.redirect(new URL(safeReturnPath(returnTarget), `https://${cfg.appHost}`), 303);
   res.headers.set("cache-control", "no-store");
   for (const cookie of result.setCookie) res.headers.append("set-cookie", cookie);
   // 换账号进入时必须让旧租户选择失效（Q2 缺口 5），由壳层读取后清理。

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -178,4 +179,21 @@ func (c *Client) postJSON(ctx context.Context, path string, body any, out any) e
 		return fmt.Errorf("identity %s: decode: %w", path, err)
 	}
 	return nil
+}
+
+// LaunchShell uses the registered shell target unchanged. Business navigation
+// is correlated by the shell's opaque h; it never supplies a return URL.
+func (c *Client) LaunchShell(ctx context.Context, principalID, tenantID, appID, targetID string) (string, error) {
+	var out struct {
+		LaunchURL string `json:"launch_url"`
+	}
+	err := c.postJSON(ctx, "/internal/v1/identity/shell/launch", map[string]string{"principal_id": principalID, "tenant_id": tenantID, "app_id": appID, "target_id": targetID}, &out)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(out.LaunchURL)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1" {
+		return "", errors.New("shell launch returned an unsafe URL")
+	}
+	return out.LaunchURL, nil
 }

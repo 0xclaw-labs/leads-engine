@@ -199,6 +199,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	// Restricted follow-up counts for another app. No session and no contact fields.
 	mux.Handle("GET /internal/v1/campaign-follow-ups", s.requireInternal(s.handleCampaignFollowUps))
+	mux.Handle("POST /internal/v1/touch-follow-ups/resolve", s.requireInternal(s.handleTouchFollowUpResolve))
+	mux.Handle("POST /internal/v1/touch-follow-ups/register", s.requireInternal(s.handleTouchFollowUpRegister))
+	mux.Handle("POST /api/v1/touch-follow-ups/{h}/resume", s.requireInternal(s.handleTouchFollowUpResume))
+	mux.Handle("POST /api/v1/touch-follow-up-visits/{visit}/return", s.requireSession(s.handleTouchFollowUpReturn))
 
 	// HUI-1680: registered Notify receiver. No browser session — HMAC is the
 	// credential. Flag off → route not mounted (404).
@@ -225,6 +229,7 @@ func (s *Server) Handler() http.Handler {
 
 	// authenticated business surface
 	mux.Handle("GET /api/v1/whoami", s.requireSession(s.handleWhoami))
+	mux.Handle("GET /api/v1/session/memberships", s.requirePrincipal(s.handleSessionMemberships))
 	mux.Handle("GET /api/v1/subscription", s.requireSession(s.handleSubscriptionGet))
 	mux.Handle("PUT /api/v1/subscription/cache", s.requireSession(s.handleSubscriptionCache))
 	mux.Handle("POST /api/v1/subscription/usage", s.requireSession(s.handleSubscriptionUsage))
@@ -458,6 +463,15 @@ func (s *Server) requireInternal(next http.HandlerFunc) http.Handler {
 // tenant membership resolve. It is the single identity path; there is no
 // alternate or stub mode.
 func (s *Server) requireSession(next http.HandlerFunc) http.Handler {
+	return s.requireIdentity(next, true)
+}
+
+// requirePrincipal shares the original identity resolution but does not require
+// an already selected workspace. Only scope discovery uses this narrow entry.
+func (s *Server) requirePrincipal(next http.HandlerFunc) http.Handler {
+	return s.requireIdentity(next, false)
+}
+func (s *Server) requireIdentity(next http.HandlerFunc, withTenant bool) http.Handler {
 	return s.requireInternal(func(w http.ResponseWriter, r *http.Request) {
 		if problems := s.Cfg.Gate(); len(problems) > 0 {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -485,6 +499,11 @@ func (s *Server) requireSession(next http.HandlerFunc) http.Handler {
 					"message": "platform identity could not be reached; refusing to act (fail-closed)",
 				})
 			}
+			return
+		}
+
+		if !withTenant {
+			next(w, r.WithContext(context.WithValue(r.Context(), callerKey, &caller{Principal: principal})))
 			return
 		}
 

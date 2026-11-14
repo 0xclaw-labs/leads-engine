@@ -114,6 +114,8 @@ const routes: readonly RouteEntry[] = [
   { path: "/f/[id]", id: "public_consumer", regions: REQUIRED_REGIONS },
   // 访客 H5 不登录，不是员工接待台。
   { path: "/r/[id]", id: "public_consumer", regions: REQUIRED_REGIONS },
+  // 原 SSO 后的记录接续承载，不另建一个 CRM 业务视图。
+  { path: "/touch-follow-up/[h]", id: "recovery", regions: REQUIRED_REGIONS },
 ];
 
 export function routeLedger(): RouteEntry[] {
