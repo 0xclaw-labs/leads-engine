@@ -113,7 +113,7 @@ export default function LeadsPage() {
         const items = ((leadsBody.items ?? []) as LeadRow[]).map((lead) => ({
           ...lead,
           // 联系人缺失时如实说“待同步”，绝不伪造一个可读姓名。
-          name: lead.contact_name || "联系人待同步",
+          name: lead.contact_name || "未填写称呼",
         }));
         const accepted = acceptLeadRows(gen.current, ticket, items);
         if (cancelled || accepted === null) return;

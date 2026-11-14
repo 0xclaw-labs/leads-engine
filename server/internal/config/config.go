@@ -116,7 +116,8 @@ const (
 	// billing secret and never a long-lived presentation token.
 	EnvReceptionVisitorPepper = "RECEPTION_VISITOR_PEPPER"
 	// EnvIngestSources is a comma-separated allowlist of source app ids.
-	// Each app reads LEADS_INGEST_<APP>_SECRET / _FETCH_BASE / _FETCH_TOKEN,
+	// Each app reads LEADS_INGEST_<APP>_SECRET / _FETCH_BASE / _FETCH_TOKEN;
+	// Touch additionally requires _FETCH_SERVICE_ID for its trusted receiver,
 	// where <APP> is the app id uppercased with '-' replaced by '_'.
 	EnvIngestSources = "LEADS_INGEST_SOURCES"
 	// EnvTenantBindings is an explicit source→target list. It does not create
@@ -263,10 +264,11 @@ type Config struct {
 // IngestSource is one registered Notify sender (HUI-1680). The fetch base is
 // deployment configuration, never a URL taken from the event.
 type IngestSource struct {
-	AppID      string
-	Secret     string
-	FetchBase  string
-	FetchToken string
+	AppID          string
+	Secret         string
+	FetchBase      string
+	FetchToken     string
+	FetchServiceID string
 }
 
 // EcoHandoffConfig is the constrained handoff delivery configuration
@@ -480,10 +482,11 @@ func parseIngestSources(get func(string) string) []IngestSource {
 		}
 		key := ingestEnvKey(app)
 		out = append(out, IngestSource{
-			AppID:      app,
-			Secret:     strings.TrimSpace(get("LEADS_INGEST_" + key + "_SECRET")),
-			FetchBase:  strings.TrimRight(strings.TrimSpace(get("LEADS_INGEST_"+key+"_FETCH_BASE")), "/"),
-			FetchToken: strings.TrimSpace(get("LEADS_INGEST_" + key + "_FETCH_TOKEN")),
+			AppID:          app,
+			Secret:         strings.TrimSpace(get("LEADS_INGEST_" + key + "_SECRET")),
+			FetchBase:      strings.TrimRight(strings.TrimSpace(get("LEADS_INGEST_"+key+"_FETCH_BASE")), "/"),
+			FetchToken:     strings.TrimSpace(get("LEADS_INGEST_" + key + "_FETCH_TOKEN")),
+			FetchServiceID: strings.TrimSpace(get("LEADS_INGEST_" + key + "_FETCH_SERVICE_ID")),
 		})
 	}
 	return out
@@ -530,6 +533,9 @@ func (c Config) IngestGate() []string {
 		prefix := "LEADS_INGEST_" + ingestEnvKey(src.AppID)
 		if src.Secret == "" {
 			problems = append(problems, prefix+"_SECRET is required")
+		}
+		if src.AppID == "touch-engine" && src.FetchServiceID == "" {
+			problems = append(problems, prefix+"_FETCH_SERVICE_ID is required")
 		}
 		if src.FetchToken == "" {
 			problems = append(problems, prefix+"_FETCH_TOKEN is required")

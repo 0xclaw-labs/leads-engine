@@ -582,3 +582,10 @@ func revocationRows(q rowQuery, where string, args ...any) ([]NotifyRevocation, 
 	}
 	return out, rows.Err()
 }
+
+// UpdateNotifyReceiptTx persists the original source ACK intent with its inbox.
+// Business state and revocation waterlines are committed before the HTTP ACK.
+func UpdateNotifyReceiptTx(tx *sql.Tx, id, receipt string) error {
+	_, err := tx.Exec(`UPDATE notify_inbox SET receipt_json=?,updated_at=? WHERE id=?`, receipt, now(), id)
+	return err
+}
