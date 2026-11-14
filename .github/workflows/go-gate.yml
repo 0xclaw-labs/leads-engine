@@ -23,7 +23,7 @@ jobs:
     # （fleet 组 mac+win runner 共用；本 job 纯 Go + bash 无 OS 绑定）。回退=改回 [win-ci]。
     # 排查附记：org 迁移后 fleet 组 allows_public_repositories 为 false，本仓（公开）任何标签都
     # 派不出去——10-20 已开闸；fork-PR 审批保持 all_external_contributors。
-    runs-on: [xplat]
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 30
     defaults:
       run:
