@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/bianjiefilm/leads-engine/server/internal/notifyingest"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -187,30 +188,19 @@ func TestNotifyIngestReceiver(t *testing.T) {
 		}
 	})
 
-	t.Run("revocation then a late submit does not grant marketing", func(t *testing.T) {
+	t.Run("revocation then a late submit never creates a contact", func(t *testing.T) {
 		refR := "sub_revoke"
+		before := h.contactCount(sessionOwnerA, tenantA)
 		revokeBody := ingestEvent(tenantA, "evt-revoke", refR, 2, "lead.consent_revoked", "nfc", true, "己", "13900000021", "")
-		src.put(refR, recordJSON(tenantA, refR, "己", "13900000021", "", "", "revoked", "lead_submission", false, false, false))
+		src.put(refR, recordJSON(tenantA, refR, "", "", "", "", "revoked", "lead_submission", false, false, false))
 		res := postIngest(t, h, revokeBody, signBody(secret, revokeBody))
-		if res.status != http.StatusOK || res.json["ingestion"] != "revocation_accepted" {
-			t.Fatalf("revoke=%d %v", res.status, res.json)
+		if res.status != 200 || res.json["ingestion"] != "revocation_accepted" {
+			t.Fatalf("revoke=%d %s", res.status, res.raw)
 		}
 		submit := ingestEvent(tenantA, "evt-late", refR, 1, "lead.authorized_submitted", "nfc", false, "己", "13900000021", "")
-		src.put(refR, recordJSON(tenantA, refR, "己", "13900000021", "", "", "granted", "lead_submission", true, true, true))
 		res = postIngest(t, h, submit, signBody(secret, submit))
-		if res.status != http.StatusOK {
-			t.Fatalf("late=%d %s", res.status, res.raw)
-		}
-		cid, _ := res.json["contact_id"].(string)
-		consents := h.mustDo("GET", "/api/v1/contacts/"+cid+"/consents", sessionOwnerA, tenantA, "", http.StatusOK)
-		for _, it := range consents["items"].([]any) {
-			row := it.(map[string]any)
-			ch, _ := row["source_channel"].(string)
-			if ch == "marketing_phone" || ch == "marketing_sms" {
-				if row["marketing_allowed"] == true && row["revoked_at"] == nil {
-					t.Fatalf("late submit restored marketing: %v", row)
-				}
-			}
+		if res.status != 200 || res.json["contact_id"] != nil || h.contactCount(sessionOwnerA, tenantA) != before {
+			t.Fatalf("late submit created contact: %d %s", res.status, res.raw)
 		}
 	})
 
@@ -223,7 +213,7 @@ func TestNotifyIngestReceiver(t *testing.T) {
 			t.Fatalf("v1=%d %s", first.status, first.raw)
 		}
 		newer := ingestEvent(tenantA, "evt-v2", ref, 2, "lead.authorized_submitted", "nfc", false, "版本", "13900000041", "")
-		src.put(ref, recordJSON(tenantA, ref, "版本", "13900000041", "", "", "granted", "lead_submission", true, true, false))
+		src.put(ref, strings.Replace(recordJSON(tenantA, ref, "版本", "13900000041", "", "", "granted", "lead_submission", true, true, false), `"source_revision":1`, `"source_revision":2`, 1))
 		second := postIngest(t, h, newer, signBody(secret, newer))
 		if second.status != http.StatusOK {
 			t.Fatalf("v2=%d %s", second.status, second.raw)
@@ -350,7 +340,20 @@ func ingestEventApp(app, tenant, eventID, sourceRef string, version int, eventTy
 }
 
 func recordJSON(tenant, ref, name, phone, email, wechat, auth, purpose string, form, phoneOK, sms bool) string {
+	revision := 1
+	tombstone := auth == "revoked"
+	if tombstone {
+		revision = 2
+		name = ""
+		phone = ""
+		email = ""
+		wechat = ""
+		form = false
+		phoneOK = false
+		sms = false
+	}
 	b, _ := json.Marshal(map[string]any{
+		"source_revision": revision, "consent_revision": "n1", "tombstone": tombstone,
 		"submission_ref": ref, "tenant_id": tenant, "name": name, "phone": phone,
 		"email": email, "wechat": wechat, "channel_subject_ref": "",
 		"authorization": auth, "purpose": purpose,
@@ -370,19 +373,23 @@ func (h *harness) contactCount(session, tenant string) int {
 }
 
 type recordSource struct {
-	url     string
-	mu      sync.Mutex
-	recs    map[string]string
-	fail    bool
-	token   string
-	tenants []string
+	url       string
+	mu        sync.Mutex
+	recs      map[string]string
+	fail      bool
+	token     string
+	tenants   []string
+	acks      []notifyingest.Acknowledgement
+	ackStatus int
+	onACK     func(notifyingest.Acknowledgement)
 }
 
 func newRecordSource(t *testing.T) *recordSource {
 	t.Helper()
 	s := &recordSource{recs: map[string]string{}, token: "test-fetch-token"}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Internal-Token") != s.token {
+		v2 := strings.HasPrefix(r.URL.Path, "/api/v1/internal/lead-records/")
+		if (v2 && (r.Header.Get("X-Service-ID") != "leads-receiver" || r.Header.Get("X-Service-Token") != s.token || r.Header.Get("X-Internal-Token") != "")) || (!v2 && r.Header.Get("X-Internal-Token") != s.token) {
 			http.Error(w, "no", http.StatusUnauthorized)
 			return
 		}
@@ -395,7 +402,41 @@ func newRecordSource(t *testing.T) *recordSource {
 		if got := strings.TrimSpace(r.Header.Get("X-Leads-Tenant")); got != "" {
 			s.tenants = append(s.tenants, got)
 		}
-		ref := strings.TrimPrefix(r.URL.Path, "/internal/v1/lead-records/")
+		path := "/internal/v1/lead-records/"
+		if v2 {
+			path = "/api/v1/internal/lead-records/"
+		}
+		ref := strings.TrimPrefix(r.URL.Path, path)
+		if v2 && r.Method == http.MethodPost && strings.HasSuffix(ref, "/acknowledgements") {
+			var ack notifyingest.Acknowledgement
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&ack); err != nil {
+				http.Error(w, "bad ack", 400)
+				return
+			}
+			if ack.SubmissionID != strings.TrimSuffix(ref, "/acknowledgements") {
+				http.Error(w, "ref", 400)
+				return
+			}
+			s.acks = append(s.acks, ack)
+			if s.onACK != nil {
+				s.onACK(ack)
+			}
+			status := s.ackStatus
+			if status == -1 {
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err == nil {
+					conn.Close()
+				}
+				return
+			}
+			if status == 0 {
+				status = 201
+			}
+			w.WriteHeader(status)
+			return
+		}
 		raw, ok := s.recs[ref]
 		if !ok {
 			http.NotFound(w, r)
@@ -421,4 +462,38 @@ func (s *recordSource) fetchedTenants() []string {
 	out := make([]string, len(s.tenants))
 	copy(out, s.tenants)
 	return out
+}
+
+func TestTouchNotifyIntakeOptionalNameKeepsOriginalConsentAndReplay(t *testing.T) {
+	secret := "test-ingest-secret"
+	src := newRecordSource(t)
+	h := newHarnessOpts(t, harnessOpts{featureNotifyIngest: true, ingestFetchBase: src.url, ingestSecret: secret, ingestFetchToken: "test-fetch-token"})
+	tenant, _, _ := h.seed()
+	before := h.contactCount(sessionOwnerA, tenant)
+	ref := "sub_optional_name"
+	body := ingestEvent(tenant, "evt-optional-name", ref, 1, "lead.authorized_submitted", "nfc", false, "", "13900000099", "")
+	src.put(ref, recordJSON(tenant, ref, "", "13900000099", "", "", "granted", "lead_submission", true, false, false))
+	res := postIngest(t, h, body, signBody(secret, body))
+	if res.status != http.StatusOK && res.status != http.StatusCreated {
+		t.Fatalf("optional name intake=%d %s", res.status, res.raw)
+	}
+	replay := postIngest(t, h, body, signBody(secret, body))
+	if replay.status != http.StatusOK {
+		t.Fatalf("replay=%d %s", replay.status, replay.raw)
+	}
+	if got := h.contactCount(sessionOwnerA, tenant); got != before+1 {
+		t.Fatalf("contact count=%d want %d", got, before+1)
+	}
+}
+
+func (s *recordSource) setACKStatus(status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ackStatus = status
+}
+func (s *recordSource) clearACKs() { s.mu.Lock(); defer s.mu.Unlock(); s.acks = nil }
+func (s *recordSource) acknowledgements() []notifyingest.Acknowledgement {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]notifyingest.Acknowledgement(nil), s.acks...)
 }

@@ -331,6 +331,8 @@ func newHarnessOpts(t *testing.T, opts harnessOpts) *harness {
 			return "test-ingest-secret"
 		case "LEADS_INGEST_TOUCH_ENGINE_FETCH_BASE":
 			return opts.ingestFetchBase
+		case "LEADS_INGEST_TOUCH_ENGINE_FETCH_SERVICE_ID":
+			return "leads-receiver"
 		case "LEADS_INGEST_TOUCH_ENGINE_FETCH_TOKEN":
 			if opts.ingestFetchToken != "" {
 				return opts.ingestFetchToken

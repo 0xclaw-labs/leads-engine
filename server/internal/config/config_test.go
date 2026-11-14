@@ -242,3 +242,22 @@ func TestTaskTextCapabilityAndModelFromEnv(t *testing.T) {
 		t.Fatalf("task text env must default empty: %q %q", empty.TaskTextCapability, empty.TaskTextModel)
 	}
 }
+
+func TestTouchIngestRequiresDeploymentRegisteredReceiverIdentity(t *testing.T) {
+	env := map[string]string{"FEATURE_NOTIFY_INGEST": "on", "LEADS_DEDUP_PEPPER": "dedup", "LEADS_INGEST_SOURCES": "touch-engine", "LEADS_INGEST_TOUCH_ENGINE_SECRET": "ingest-secret", "LEADS_INGEST_TOUCH_ENGINE_FETCH_BASE": "https://source.example.invalid", "LEADS_INGEST_TOUCH_ENGINE_FETCH_TOKEN": "receiver-token"}
+	cfg := Load(func(k string) string { return env[k] })
+	if got := strings.Join(cfg.IngestGate(), ";"); !strings.Contains(got, "FETCH_SERVICE_ID") {
+		t.Fatalf("missing receiver identity did not fail closed: %s", got)
+	}
+	env["LEADS_INGEST_TOUCH_ENGINE_FETCH_SERVICE_ID"] = "leads-receiver"
+	cfg = Load(func(k string) string { return env[k] })
+	if len(cfg.IngestGate()) != 0 || cfg.IngestSources[0].FetchServiceID != "leads-receiver" {
+		t.Fatalf("registered receiver config: %+v %v", cfg.IngestSources, cfg.IngestGate())
+	}
+	// Other source apps keep the previously deployed internal-token protocol.
+	cfg.IngestSources[0].AppID = "partner-app"
+	cfg.IngestSources[0].FetchServiceID = ""
+	if len(cfg.IngestGate()) != 0 {
+		t.Fatalf("legacy source unexpectedly needs Touch service identity: %v", cfg.IngestGate())
+	}
+}
