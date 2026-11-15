@@ -18,7 +18,7 @@ Touch 服务先用原 `LEADS_FOLLOW_UP_*` 通路解析，再请求原 Identity s
 
 - Leads migration `0032_follow_up_navigation_contexts.sql`；Touch migration `0138_follow_up_navigation_contexts.sql`。均为隔离导航 context 表，保存引用，不保存联系方式；不写原业务/ACK/consent 水位。
 - Touch：`LEADS_FOLLOW_UP_BASE_URL=<Leads Go URL>`，`LEADS_FOLLOW_UP_TOKEN=<原 Leads internal service token>`；现有 Touch Identity base/token；现有受信 `lead_receiver` service registry。
-- Leads：原 `LEADS_INGEST_TOUCH_ENGINE_FETCH_BASE/TOKEN/SERVICE_ID`，原完整 scoped `LEADS_TENANT_BINDINGS`、Identity base/token、internal token。
+- Leads：原 `LEADS_INGEST_TOUCH_ENGINE_FETCH_BASE`、`LEADS_INGEST_TOUCH_ENGINE_FETCH_TOKEN`、`LEADS_INGEST_TOUCH_ENGINE_FETCH_SERVICE_ID`，原完整 scoped `LEADS_TENANT_BINDINGS`、Identity base/token、internal token。
 - Web：原 BFF `TOUCH_SERVER_URL/TOUCH_INTERNAL_TOKEN`、`LEADS_SERVER_URL/LEADS_INTERNAL_TOKEN`。两端 `SSO_APP_HOST` 必须对应实际登记 canonical host，`IDENTITY_SSO_EXCHANGE_URL` 指向原 Identity exchange；Go 配 `TOUCH_SESSION_COOKIE=touch-engine_session`、`LEADS_SESSION_COOKIE=leads-engine_session`。桥只原样转发 Identity cookies，无新账户/SSO。
 - 原 public-ai 生产 manifest 目前登记 `leads-engine / ti-leads-engine-web -> https://leads.modelxing.com/`，没有 Touch launch target。正式返回必须先获上游实际登记；不会向上游登记表添加工程 target。Touch 仅逐字节同步上游已登记快照，不把工程目标当正式资格。
 

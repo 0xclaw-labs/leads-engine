@@ -13,7 +13,7 @@ jobs:
     # 2026-10-17 迁 Windows 专机（win-ci）。python3 → python：Windows 无 python3 别名，
     # ubuntu-latest 两者皆有，改动对原宿主无影响。shell 显式 bash（Windows 默认 pwsh）。
     # 2026-10-20：同 go-gate，改跨平台标签 [xplat]；mac 只有 python3，命令名做兼容。回退=改回 [win-ci]。
-    runs-on: [xplat]
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 15
     defaults:
       run:
