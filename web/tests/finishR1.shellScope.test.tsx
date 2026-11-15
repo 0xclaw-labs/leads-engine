@@ -19,6 +19,9 @@ describe("finish-r1 shell token scope", () => {
     expect(html).toContain('data-pn-surface="work.light"');
     expect(html).toContain('data-pn-theme="light"');
     expect(html).toContain("desk-frame");
-    expect(html).toContain("PAGE_MARKER");
+    // The same renderer wraps the loading state until current membership and
+    // the selected workspace are confirmed; old account data must not flash.
+    expect(html).toContain("正在核验工作范围");
+    expect(html).not.toContain("PAGE_MARKER");
   });
 });

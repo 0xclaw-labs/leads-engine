@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { TouchFollowUpReturn } from "@/components/TouchFollowUpReturn";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { RecordFrame, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
@@ -190,6 +191,7 @@ export default function LeadDeskPage() {
       <header className="page-head" data-region="header">
         <h1>线索</h1>
         <Link className="btn" href="/">返回工作台</Link>
+        <TouchFollowUpReturn />
       </header>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       {err ? (

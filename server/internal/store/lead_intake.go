@@ -285,7 +285,7 @@ func IntakeLeadInTx(tx *sql.Tx, in IntakeInput) (IntakeResult, error) {
 	if in.SourceType != "manual" && in.SourceType != "form" && in.SourceType != "touch_campaign" {
 		return IntakeResult{}, errors.New("intake: source_type must be manual, form or touch_campaign")
 	}
-	if strings.TrimSpace(in.ContactName) == "" {
+	if strings.TrimSpace(in.ContactName) == "" && !(in.SourceApp == "touch-engine" && in.SourceType == "touch_campaign" && NormalizePhone(in.Phone) != "" && LeadFilterReason(in.Phone, "") == "") {
 		return IntakeResult{}, errors.New("intake: contact name is required")
 	}
 	if runeLen64(in.ContactName) > 100 || runeLen64(in.Email) > 200 {

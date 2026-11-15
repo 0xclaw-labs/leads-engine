@@ -245,6 +245,7 @@ describe("page census", () => {
       "/enterprises",
       "/channel-interactions",
       "/isolation",
+      "/touch-follow-up/[h]",
     ]);
   });
 

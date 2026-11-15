@@ -13,13 +13,14 @@ import { CRM_TENANT_STORAGE_KEY } from "@/lib/eco-nav/crm-scope";
 import { blockedEcoNavModel, parseEcoNavView } from "@/lib/eco-nav/load";
 import type { EcoNavModel } from "@/lib/eco-nav/model";
 import { shouldMountEcoTopNav } from "@/lib/eco-nav/mount";
-import { commitCrmTenant, hydrateCrmTenantFromStorage, releaseCrmTenant, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
+import { commitCrmTenant, currentCrmScopeEpoch, releaseCrmTenant, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
+import { observeCrmSsoAccountChanges, resetCrmScopeAfterSso } from "@/lib/eco-nav/sso-scope-reset";
+import { resolveCrmSessionEntry } from "@/lib/eco-nav/session-entry";
 import {
   SCOPE_UNAVAILABLE,
   failureText,
   guardTenantCommit,
   rendererDensity,
-  runShellWhoami,
   scopeChoices,
   type ShellEntryFailure,
   type WorkScope,
@@ -65,11 +66,13 @@ export function CrmEntryState({ failure, onRetry }: { failure: ShellEntryFailure
 function DeskFrame({
   scopes,
   scopeEmptyLabel,
+  onScopeSwitch,
   children,
 }: {
   scopes: WorkScope[];
   /** 未确认任何范围时范围条的文案；未登录时由壳传入“未登录”。 */
   scopeEmptyLabel?: string;
+  onScopeSwitch: (tenant: string) => void;
   children: ReactNode;
 }) {
   const width = useShellWidth();
@@ -92,7 +95,7 @@ function DeskFrame({
         scopeEmptyLabel={scopeEmptyLabel}
         onSwitch={(tenant) => {
           const chosen = guardTenantCommit(scopes, tenant);
-          if (chosen) commitCrmTenant(chosen);
+          if (chosen) onScopeSwitch(chosen);
         }}
       >
         {children}
@@ -113,6 +116,8 @@ export function CrmShell({
   const [authenticated, setAuthenticated] = useState(false);
   const [nickname, setNickname] = useState("账户");
   const [entryFailure, setEntryFailure] = useState<ShellEntryFailure | null>(null);
+  const [entryPending, setEntryPending] = useState(true);
+  const [entryChoosing, setEntryChoosing] = useState(false);
   const [switcher, setSwitcher] = useState<WorkScope[]>([]);
   const [navModel, setNavModel] = useState<EcoNavModel | null>(model ?? null);
   const [navFault, setNavFault] = useState("");
@@ -125,31 +130,50 @@ export function CrmShell({
 
   // 挂载与「重试」共用同一套对账流程。用票据替代 effect 里的 cancelled 标记，
   // 这样按钮触发的重跑能作废仍在途的上一次结果，不出现旧答案覆盖新答案。
-  const reconcileSession = useCallback(() => {
+  const reconcileSession = useCallback((selectedTenant?: string) => {
     const ticket = sessionTicket.current + 1;
     sessionTicket.current = ticket;
-    hydrateCrmTenantFromStorage();
+    resetCrmScopeAfterSso();
+    const scopeEpoch = currentCrmScopeEpoch();
+    navTicket.current = { seq: navTicket.current.seq + 1, tenant: "" };
+    setAuthenticated(false);
+    setEntryPending(true);
+    setEntryChoosing(false);
+    setEntryFailure(null);
     setSwitcher([]);
-    const stored = (window.localStorage.getItem(CRM_TENANT_STORAGE_KEY) ?? "").trim() || null;
-    void runShellWhoami({
-      storedId: stored,
-      membershipScopes: scopeChoices(model?.scopes ?? []),
-    }).then((result) => {
-      if (sessionTicket.current !== ticket) return;
-      setAuthenticated(result.ok);
-      setNickname(result.email || "账户");
-      setSwitcher(result.switcher);
-      setEntryFailure(result.failure);
-      if (!result.memoryTenantId) {
+    setNavModel(model ?? null);
+    setNavFault("");
+    setLaunchBusy(false);
+    setLaunchError("");
+    const stored = selectedTenant ?? ((window.localStorage.getItem(CRM_TENANT_STORAGE_KEY) ?? "").trim() || null);
+    void resolveCrmSessionEntry(stored).then((result) => {
+      if (sessionTicket.current !== ticket || currentCrmScopeEpoch() !== scopeEpoch) return;
+      setEntryPending(false);
+      if (result.kind === "failed") {
+        setEntryFailure(result.failure);
         releaseCrmTenant();
         return;
       }
-      if (result.persist && result.storage) commitCrmTenant(result.storage);
+      setAuthenticated(true);
+      setSwitcher(result.scopes);
+      if (result.kind === "choose") {
+        releaseCrmTenant();
+        setEntryChoosing(true);
+        return;
+      }
+      setNickname(result.session.email || "账户");
+      commitCrmTenant(result.session.memoryTenantId!);
     });
   }, [model]);
 
   useEffect(() => {
     reconcileSession();
+    const stop = observeCrmSsoAccountChanges(() => reconcileSession());
+    return () => {
+      stop();
+      sessionTicket.current += 1;
+      navTicket.current = { seq: navTicket.current.seq + 1, tenant: "" };
+    };
     // 只在挂载时对账一次；租户切换由 scope.tenant 变化驱动导航重载。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -157,11 +181,12 @@ export function CrmShell({
   const loadNav = useCallback(async (tenant: string) => {
     const ticket = { seq: navTicket.current.seq + 1, tenant };
     navTicket.current = ticket;
+    const scopeEpoch = currentCrmScopeEpoch();
     const headers: Record<string, string> = { accept: "application/json", "x-tenant-id": tenant };
     try {
       const res = await fetch("/api/eco-nav", { headers, cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as { model?: unknown; message?: string };
-      if (navTicket.current !== ticket) return;
+      if (navTicket.current !== ticket || currentCrmScopeEpoch() !== scopeEpoch) return;
       const parsed = parseEcoNavView(body.model);
       if (!parsed) {
         setNavModel(blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航契约不兼容，已停止渲染。"));
@@ -176,7 +201,7 @@ export function CrmShell({
       }
       setNavFault(parsed.renderable || parsed.status.state === "hidden" || parsed.status.state === "denied" ? "" : parsed.status.summary || "生态导航暂不可用");
     } catch {
-      if (navTicket.current !== ticket) return;
+      if (navTicket.current !== ticket || currentCrmScopeEpoch() !== scopeEpoch) return;
       setNavModel(blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航服务暂不可达。"));
       setNavFault("生态导航服务暂不可达");
     }
@@ -196,6 +221,7 @@ export function CrmShell({
   const launch = useCallback(
     async (appId: string, targetId: string) => {
       const tenant = scope.tenant ?? "";
+      const scopeEpoch = currentCrmScopeEpoch();
       if (!tenant) {
         setLaunchError("先在顶部选择工作范围。");
         return;
@@ -213,15 +239,16 @@ export function CrmShell({
           body: JSON.stringify({ app_id: appId, launch_target_id: targetId }),
         });
         const body = (await res.json().catch(() => ({}))) as { launch_url?: unknown; message?: unknown };
+        if (currentCrmScopeEpoch() !== scopeEpoch) return;
         if (!res.ok || typeof body.launch_url !== "string") {
           setLaunchError(failureText(body, res.status));
           return;
         }
         window.location.assign(body.launch_url);
       } catch {
-        setLaunchError("切换请求没有完成；目标应用没有打开，可以重试。");
+        if (currentCrmScopeEpoch() === scopeEpoch) setLaunchError("切换请求没有完成；目标应用没有打开，可以重试。");
       } finally {
-        setLaunchBusy(false);
+        if (currentCrmScopeEpoch() === scopeEpoch) setLaunchBusy(false);
       }
     },
     [scope.tenant],
@@ -242,7 +269,7 @@ export function CrmShell({
             onReturn={(sourceAppId, targetId) => void launch(sourceAppId, targetId)}
             onTenantSwitch={(tenant) => {
               const chosen = guardTenantCommit(switcher, tenant);
-              if (chosen) commitCrmTenant(chosen);
+              if (chosen) reconcileSession(chosen);
             }}
           />
         ) : null}
@@ -255,8 +282,11 @@ export function CrmShell({
             </button>
           </div>
         ) : null}
-        <DeskFrame scopes={switcher} scopeEmptyLabel={entryFailure === "unauthenticated" ? "未登录" : undefined}>
-          {entryFailure ? <CrmEntryState failure={entryFailure} onRetry={() => reconcileSession()} /> : children}
+        <DeskFrame scopes={switcher} scopeEmptyLabel={entryFailure === "unauthenticated" ? "未登录" : undefined} onScopeSwitch={(tenant) => reconcileSession(tenant)}>
+          {entryPending ? <SurfaceState kind="loading" title="正在核验工作范围" />
+            : entryFailure ? <CrmEntryState failure={entryFailure} onRetry={() => reconcileSession()} />
+            : entryChoosing ? <SurfaceState kind="recovery" title="请选择工作范围" detail="你可以进入多个工作范围，请在顶部选择本次要处理的客户。" />
+            : children}
         </DeskFrame>
       </div>
     </ShellWidthProvider>

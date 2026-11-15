@@ -205,7 +205,7 @@ export default function ContactDetailPage() {
 
   return (
     <main>
-      <h1>{contact.name}</h1>
+      <h1>{contact.name || "未填写称呼"}</h1>
       <p className="muted">
         类别:{CATEGORY_TEXT[contact.business_category] ?? contact.business_category} · 来源:{SOURCE_TEXT[contact.source_type] ?? contact.source_type} ·
         档案级授权:{contact.consent_status}
@@ -214,7 +214,7 @@ export default function ContactDetailPage() {
       <div className="card">
         <h2>基本信息与联系方式</h2>
         <ul>
-          <li>姓名:{contact.name}</li>
+          <li>姓名:{contact.name || "未填写称呼"}</li>
           <li>手机号:{contact.phone || "(未填)"}</li>
           <li>邮箱:{contact.email || "(未填)"}</li>
           <li>标签:{tags.length > 0 ? tags.join(" / ") : "(无)"}</li>

@@ -12,10 +12,15 @@ on:
       - 'server/**'
       - '.github/workflows/go-gate.yml'
   push:
+    branches: [main]
     paths:
       - 'server/**'
       - '.github/workflows/go-gate.yml'
   workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   go-gate:
@@ -25,6 +30,9 @@ jobs:
     # 派不出去——10-20 已开闸；fork-PR 审批保持 all_external_contributors。
     runs-on: [self-hosted, macOS]
     timeout-minutes: 30
+    env:
+      GOWORK: 'off'
+      GOMAXPROCS: '2'
     defaults:
       run:
         shell: bash
@@ -34,8 +42,11 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: false
-      - name: build + test (GOWORK=off)
+      - name: Build server packages
         working-directory: server
         run: |
-          GOWORK=off go build ./...
-          GOWORK=off go test ./... -count=1
+          go build -p 1 -v ./...
+      - name: Test all server packages
+        working-directory: server
+        run: |
+          go test -p 1 -v ./... -count=1

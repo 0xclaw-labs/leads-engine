@@ -27,6 +27,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
     });
   }
+  const h = opaqueExchangeCode(req.nextUrl.searchParams.get("h"));
+  const continuation = h && /^hnd_[a-f0-9]{32}$/.test(h) ? `/touch-follow-up/${h}` : "/";
   const html = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>正在进入数海获客…</title></head>
@@ -35,6 +37,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 <p>请稍候。此页只在你的浏览器与本应用之间传递一次性登录凭证。</p>
 <form id="sso-exchange" method="post" action="/api/auth/sso/exchange">
 <input type="hidden" name="code" value="${escapeHTML(code)}">
+<input type="hidden" name="return_target" value="${escapeHTML(continuation)}">
 <noscript><p>浏览器未启用脚本，请点按继续。</p><button type="submit">继续</button></noscript>
 </form>
 <script>document.getElementById("sso-exchange").submit();</script>

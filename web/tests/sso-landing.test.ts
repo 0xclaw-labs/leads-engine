@@ -96,3 +96,8 @@ describe("有效码：200 自动提交表单", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 });
+
+it("preserves only the shell handoff as a fixed continuation after normal SSO", async()=>{
+ const h="hnd_"+"a".repeat(32);const res=await GET(getReq(`?code=original-code&h=${h}&return_url=https://evil.example`,{host:HOST}));const html=await res.text();
+ expect(html).toContain('name="code" value="original-code"');expect(html).toContain(`name="return_target" value="/touch-follow-up/${h}"`);expect(html).not.toContain("evil.example");
+});

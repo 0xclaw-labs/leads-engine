@@ -73,9 +73,21 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 	sourceApp := delivery.Profile.SourceApp
 	sourceNS := tenantmap.NamespaceNotify
 	bodySHA := notifyingest.BodySHA256(body)
+	complete := func(raw string) { s.completeNotifyReceipt(w, r, src, sourceTenant, raw) }
+	replayOwnScope := func(tx *sql.Tx) bool {
+		row, err := store.GetNotifyInboxBySourceFactTx(tx, sourceApp, sourceNS, sourceTenant, notifyingest.EventLeadAuthorizedSubmitted, delivery.Profile.SourceRef)
+		if err != nil || row.ContactID == "" {
+			return false
+		}
+		// This is an already committed source fact. Roll back the current
+		// attempt, then persist its observed tombstone/pending receipt safely.
+		_ = tx.Rollback()
+		complete(row.ReceiptJSON)
+		return true
+	}
 	// 同一 trace_id + 整数 source_version：事实相同回原回执，不插第二行；事实不同则冲突，不覆盖。
 	// 更高的 source_version（撤回）不是这一版的重复。brand_display_name 不参与租户。
-	if row, err := s.St.GetNotifyInboxByTrace(sourceApp, sourceNS, sourceTenant, delivery.Payload.TraceID, delivery.Profile.SourceVersion); respondTrace(w, row, err, delivery) {
+	if row, err := s.St.GetNotifyInboxByTrace(sourceApp, sourceNS, sourceTenant, delivery.Payload.TraceID, delivery.Profile.SourceVersion); respondTrace(w, row, err, delivery, complete) {
 		return
 	}
 	// Replay is keyed by the source identity stored on the first accept.
@@ -86,7 +98,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusConflict, "event_content_conflict", "the same event key was delivered with different content")
 			return
 		}
-		writeReceipt(w, existing.ReceiptJSON)
+		complete(existing.ReceiptJSON)
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		writeTenantMapError(w, err)
@@ -94,7 +106,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if prior, err := s.lookupNotifyFact(sourceApp, sourceNS, sourceTenant, delivery.Profile.EventType, delivery.Profile.SourceRef); err == nil && delivery.Profile.SourceVersion < prior.SourceVersion {
-		writeReceipt(w, prior.ReceiptJSON)
+		complete(prior.ReceiptJSON)
 		return
 	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		writeTenantMapError(w, err)
@@ -108,13 +120,23 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	delivery.TenantID = decision.TargetTenant
 
-	rec, err := notifyingest.FetchRecord(r.Context(), src.FetchBase, src.FetchToken, sourceTenant, delivery.Profile.SourceRef)
+	rec, err := fetchIngestRecord(r, src, sourceTenant, delivery.Profile.SourceRef)
 	if err != nil {
 		s.Log.Printf("notify ingest fetch failed tenant=%s source=%s event=%s", delivery.TenantID, src.AppID, delivery.Profile.EventID)
 		fail(w, http.StatusServiceUnavailable, "source_unavailable", "authorized submission could not be fetched; not accepted")
 		return
 	}
-	if notifyingest.RecordSHA256(rec.Name, rec.Phone, rec.Wechat) != delivery.Profile.PayloadRef.SHA256 {
+	if src.AppID == "touch-engine" {
+		if err := notifyingest.ValidateTouchRecord(rec, delivery.Profile.SourceVersion); err != nil {
+			fail(w, http.StatusUnprocessableEntity, "invalid_source_record", "source authorization metadata is invalid")
+			return
+		}
+		if (delivery.Profile.EventType == notifyingest.EventLeadConsentRevoked || delivery.Payload.Revoked) && !rec.Tombstone {
+			fail(w, http.StatusUnprocessableEntity, "invalid_source_record", "revocation requires a source tombstone")
+			return
+		}
+	}
+	if !(src.AppID == "touch-engine" && rec.Tombstone) && notifyingest.RecordSHA256(rec.Name, rec.Phone, rec.Wechat) != delivery.Profile.PayloadRef.SHA256 {
 		fail(w, http.StatusConflict, "payload_hash_mismatch", "fetched submission does not match payload_ref.sha256")
 		return
 	}
@@ -149,7 +171,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 				fail(w, http.StatusInternalServerError, "internal", "ingest commit failed")
 				return
 			}
-			writeReceipt(w, row.ReceiptJSON)
+			complete(row.ReceiptJSON)
 			return
 		}
 	}
@@ -162,7 +184,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusInternalServerError, "internal", "ingest commit failed")
 			return
 		}
-		writeReceipt(w, existing.ReceiptJSON)
+		complete(existing.ReceiptJSON)
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		writeTenantMapError(w, err)
@@ -189,7 +211,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 				fail(w, http.StatusInternalServerError, "internal", "ingest commit failed")
 				return
 			}
-			writeReceipt(w, prior.ReceiptJSON)
+			complete(prior.ReceiptJSON)
 			return
 		case delivery.Profile.SourceVersion == prior.SourceVersion:
 			fail(w, http.StatusConflict, "event_content_conflict", "the same fact was delivered with different content")
@@ -223,44 +245,94 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 		revVersion = rev.SourceVersion
 		revokedBefore = true
 	}
+	if factErr == nil {
+		var pending struct {
+			Revision int `json:"source_tombstone_revision"`
+		}
+		if json.Unmarshal([]byte(prior.ReceiptJSON), &pending) == nil && pending.Revision > 0 {
+			revVersion = maxInt(revVersion, pending.Revision)
+			revokedBefore = true
+		}
+	}
 	marketingBlocked := revoke || revokedBefore
+	serviceBlocked := marketingBlocked && src.AppID == "touch-engine"
 
 	var leadID, contactID, class string
 	duplicate := false
+	scopePending := false
+	scopePendingCode := ""
+	if serviceBlocked && !revoke {
+		fail(w, http.StatusServiceUnavailable, "source_ack_pending", "source conflicts with persisted revocation; permissions cannot be restored")
+		return
+	}
 	if revoke {
 		leadID, contactID, _, err = findLead(tx, delivery)
-		if err != nil {
+		if code := notifyScopeErrorCode(err); code != "" {
+			if replayOwnScope(tx) {
+				return
+			}
+			// A rejected foreign source ref must not occupy the original
+			// owner's legacy inbox/revocation keys. Its source outbox retains
+			// the tombstone until provenance is resolved.
+			s.Log.Printf("notify source scope rejected: %v", err)
+			fail(w, http.StatusServiceUnavailable, code, "source authority is unresolved; no local business record was changed or acknowledged")
+			return
+		} else if err != nil {
 			fail(w, http.StatusInternalServerError, "internal", "lead lookup failed")
 			return
 		}
 		if contactID != "" {
-			if err := store.RevokeMarketingTx(tx, delivery.TenantID, contactID, "notify_revoke"); err != nil {
-				fail(w, http.StatusInternalServerError, "internal", "revoke failed")
-				return
+			if src.AppID == "touch-engine" {
+				err = store.RevokeTouchSubmissionTx(tx, delivery.TenantID, contactID, sourceTenant, delivery.Profile.SourceRef, "notify_revoke")
+				scopePending = errors.Is(err, store.ErrConsentScopeConflict)
+				if scopePending {
+					scopePendingCode = notifyScopeErrorCode(err)
+				}
+			} else {
+				err = store.RevokeMarketingTx(tx, delivery.TenantID, contactID, "notify_revoke")
+				if err == nil {
+					err = store.RevokeConsentChannelsTx(tx, delivery.TenantID, contactID, revokedNotifyChannels(src.AppID), "notify_revoke")
+				}
 			}
-			if err := store.RevokeConsentChannelsTx(tx, delivery.TenantID, contactID, []string{"marketing_phone", "marketing_sms"}, "notify_revoke"); err != nil {
+			if err != nil && !scopePending {
 				fail(w, http.StatusInternalServerError, "internal", "revoke failed")
 				return
 			}
 		}
-		if err := storeUpsertRevocation(tx, delivery, sourceTenant, decision, maxInt(delivery.Profile.SourceVersion, revVersion)); err != nil {
+		waterline := maxInt(delivery.Profile.SourceVersion, revVersion)
+		if src.AppID == "touch-engine" {
+			waterline = maxInt(waterline, rec.SourceRevision)
+		}
+		if err := storeUpsertRevocation(tx, delivery, sourceTenant, decision, waterline); err != nil {
+			if code := notifyScopeErrorCode(err); code != "" {
+				if replayOwnScope(tx) {
+					return
+				}
+				fail(w, http.StatusServiceUnavailable, code, "source revocation authority needs review; no acknowledgement was sent")
+				return
+			}
 			fail(w, http.StatusInternalServerError, "internal", "revocation write failed")
 			return
 		}
 		class = "revocation"
 	} else {
 		name := strings.TrimSpace(rec.Name)
-		if name == "" && strings.TrimSpace(rec.ChannelSubjectRef) != "" {
+		if name == "" && strings.TrimSpace(rec.ChannelSubjectRef) != "" && delivery.Profile.SourceApp != "touch-engine" {
 			name = "未留姓名"
 		}
-		if name == "" {
-			fail(w, http.StatusUnprocessableEntity, "insufficient_contact", "authorized submission has no name or channel subject")
+		if name == "" && !(delivery.Profile.SourceApp == "touch-engine" && store.NormalizePhone(rec.Phone) != "" && store.LeadFilterReason(rec.Phone, "") == "") {
+			fail(w, http.StatusUnprocessableEntity, "insufficient_contact", "authorized submission has no usable contact")
 			return
 		}
 		snapshot := provenanceSnapshot(delivery, sourceTenant, decision)
 		sourceRefID, err := ensureSource(tx, delivery, snapshot)
 		if err != nil {
-			fail(w, http.StatusInternalServerError, "internal", "source ref failed")
+			if code := notifyScopeErrorCode(err); code != "" {
+				s.Log.Printf("notify source scope rejected: %v", err)
+				fail(w, http.StatusConflict, code, "stored source authority does not match this source; no lead or permission was changed")
+			} else {
+				fail(w, http.StatusInternalServerError, "internal", "source ref failed")
+			}
 			return
 		}
 		var found bool
@@ -290,20 +362,33 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 		} else {
 			class = "existing"
 		}
+		consentRef := delivery.Profile.SourceRef
+		if src.AppID == "touch-engine" {
+			consentRef, err = store.ResolveTouchConsentRefTx(tx, delivery.TenantID, contactID, sourceTenant, delivery.Profile.SourceRef, true)
+			if err != nil {
+				if errors.Is(err, store.ErrConsentScopeConflict) {
+					s.Log.Printf("notify consent scope pending: %v", err)
+					fail(w, http.StatusServiceUnavailable, "consent_scope_conflict", "permissions need provenance review before source acknowledgement")
+				} else {
+					fail(w, http.StatusInternalServerError, "internal", "consent scope lookup failed")
+				}
+				return
+			}
+		}
 		notice := firstNonEmptyStr(rec.Consents.NoticeVersion, delivery.Payload.ConsentVersion)
 		phoneAllowed := rec.Consents.MarketingPhone && !marketingBlocked
 		smsAllowed := rec.Consents.MarketingSMS && !marketingBlocked
 		if err := store.UpsertConsentsTx(tx, delivery.TenantID, contactID, []store.ConsentUpsert{
-			{SourceSubmissionRef: delivery.Profile.SourceRef, SourceChannel: "form_authorization", NoticeVersion: notice, Purpose: "form_authorization", MarketingAllowed: rec.Consents.FormAuthorized},
-			{SourceSubmissionRef: delivery.Profile.SourceRef, SourceChannel: "channel_reply", NoticeVersion: notice, Purpose: "channel_reply", MarketingAllowed: rec.Consents.ChannelReply},
-			{SourceSubmissionRef: delivery.Profile.SourceRef, SourceChannel: "marketing_phone", NoticeVersion: notice, Purpose: "marketing_phone", MarketingAllowed: phoneAllowed},
-			{SourceSubmissionRef: delivery.Profile.SourceRef, SourceChannel: "marketing_sms", NoticeVersion: notice, Purpose: "marketing_sms", MarketingAllowed: smsAllowed},
+			{SourceSubmissionRef: consentRef, SourceChannel: "form_authorization", NoticeVersion: notice, Purpose: "form_authorization", MarketingAllowed: rec.Consents.FormAuthorized && !serviceBlocked},
+			{SourceSubmissionRef: consentRef, SourceChannel: "channel_reply", NoticeVersion: notice, Purpose: "channel_reply", MarketingAllowed: rec.Consents.ChannelReply && !serviceBlocked},
+			{SourceSubmissionRef: consentRef, SourceChannel: "marketing_phone", NoticeVersion: notice, Purpose: "marketing_phone", MarketingAllowed: phoneAllowed},
+			{SourceSubmissionRef: consentRef, SourceChannel: "marketing_sms", NoticeVersion: notice, Purpose: "marketing_sms", MarketingAllowed: smsAllowed},
 		}); err != nil {
 			fail(w, http.StatusInternalServerError, "internal", "consent write failed")
 			return
 		}
 		if marketingBlocked {
-			if err := store.RevokeConsentChannelsTx(tx, delivery.TenantID, contactID, []string{"marketing_phone", "marketing_sms"}, "prior_revocation"); err != nil {
+			if err := store.RevokeConsentChannelsTx(tx, delivery.TenantID, contactID, revokedNotifyChannels(src.AppID), "prior_revocation"); err != nil {
 				fail(w, http.StatusInternalServerError, "internal", "revoke failed")
 				return
 			}
@@ -325,6 +410,19 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 	if leadID != "" {
 		receipt["lead_id"] = leadID
 		receipt["contact_id"] = contactID
+	}
+	if scopePending {
+		receipt["ingestion"] = "revocation_pending"
+		receipt["scope_error"] = scopePendingCode
+		receipt["revocation_pending"] = true
+	}
+	if src.AppID == "touch-engine" && !scopePending {
+		receipt["consent_scope"] = store.TouchConsentRef(sourceTenant, delivery.Profile.SourceRef)
+		state := "stored"
+		if revoke || revokedBefore {
+			state = "revoked"
+		}
+		receipt["source_ack"] = sourceAcknowledgement(src.AppID, sourceTenant, delivery.Profile.EventID, delivery.Profile.SourceRef, rec.SourceRevision, state)
 	}
 	raw, _ := json.Marshal(receipt)
 	occurred := ""
@@ -354,7 +452,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 					fail(w, http.StatusInternalServerError, "internal", "ingest commit failed")
 					return
 				}
-				writeReceipt(w, row.ReceiptJSON)
+				complete(row.ReceiptJSON)
 				return
 			}
 			fail(w, http.StatusConflict, "event_content_conflict", "the same trace and source_version were delivered with different content")
@@ -365,7 +463,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 				fail(w, http.StatusInternalServerError, "internal", "ingest commit failed")
 				return
 			}
-			writeReceipt(w, row.ReceiptJSON)
+			complete(row.ReceiptJSON)
 			return
 		}
 	}
@@ -380,7 +478,7 @@ func (s *Server) handleNotifyIngest(w http.ResponseWriter, r *http.Request) {
 	s.Log.Printf("notify ingest tenant=%s source=%s event=%s class=%s lead=%s phone_fpr=%s dup=%t",
 		delivery.TenantID, delivery.Profile.SourceApp, delivery.Profile.EventID, class, leadID,
 		shortFPR(s.Cfg.DedupPepper, rec.Phone), duplicate)
-	writeReceipt(w, string(raw))
+	complete(string(raw))
 }
 
 func (s *Server) handleNotifyReceipt(w http.ResponseWriter, r *http.Request) {
@@ -512,7 +610,7 @@ func traceKindOf(row store.NotifyInbox, err error, d notifyingest.Delivery) trac
 	return traceReplayHit
 }
 
-func respondTrace(w http.ResponseWriter, row store.NotifyInbox, err error, d notifyingest.Delivery) bool {
+func respondTrace(w http.ResponseWriter, row store.NotifyInbox, err error, d notifyingest.Delivery, complete func(string)) bool {
 	switch traceKindOf(row, err, d) {
 	case traceNone:
 		return false
@@ -521,7 +619,7 @@ func respondTrace(w http.ResponseWriter, row store.NotifyInbox, err error, d not
 	case traceConflict:
 		fail(w, http.StatusConflict, "event_content_conflict", "the same trace and source_version were delivered with different content")
 	default:
-		writeReceipt(w, row.ReceiptJSON)
+		complete(row.ReceiptJSON)
 	}
 	return true
 }
@@ -594,19 +692,25 @@ func uniqueViolation(err error) bool {
 }
 
 func findLead(tx *sql.Tx, d notifyingest.Delivery) (string, string, bool, error) {
+	if d.Profile.SourceApp == "touch-engine" {
+		return store.FindTouchLeadBySourceTx(tx, d.TenantID, d.Profile.TenantScope, d.Profile.SourceRef)
+	}
 	return store.FindLeadBySourceTx(tx, d.TenantID, d.Profile.SourceApp, d.Profile.SourceRef)
 }
 
 func ensureSource(tx *sql.Tx, d notifyingest.Delivery, snapshot string) (string, error) {
+	if d.Profile.SourceApp == "touch-engine" {
+		return store.EnsureTouchSourceRefTx(tx, d.TenantID, d.Profile.TenantScope, d.Profile.SourceRef, snapshot)
+	}
 	return store.EnsureSourceRefTx(tx, d.TenantID, d.Profile.SourceApp, d.Profile.SourceRef, snapshot)
 }
 
 func storeUpsertRevocation(tx *sql.Tx, d notifyingest.Delivery, sourceTenant string, decision tenantmap.Decision, version int) error {
-	return store.UpsertNotifyRevocationTx(tx, store.NotifyRevocation{
-		TenantID: d.TenantID, SourceApp: d.Profile.SourceApp, SourceNS: decision.SourceNS,
-		SourceRef: d.Profile.SourceRef, SourceTenantID: sourceTenant, SourceVersion: version,
-		MapTargetTenantID: decision.TargetTenant, MapVersion: decision.Version, MapBasis: decision.Basis,
-	})
+	rev := store.NotifyRevocation{TenantID: d.TenantID, SourceApp: d.Profile.SourceApp, SourceNS: decision.SourceNS, SourceRef: d.Profile.SourceRef, SourceTenantID: sourceTenant, SourceVersion: version, MapTargetTenantID: decision.TargetTenant, MapVersion: decision.Version, MapBasis: decision.Basis}
+	if d.Profile.SourceApp == "touch-engine" {
+		return store.UpsertTouchRevocationTx(tx, rev)
+	}
+	return store.UpsertNotifyRevocationTx(tx, rev)
 }
 
 func setNotes(tx *sql.Tx, tenantID, contactID string, rec notifyingest.Record) error {
