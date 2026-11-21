@@ -7,6 +7,7 @@ import { RecordFrame, SurfaceState, useShellWidth } from "@/components/workbench
 import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
+import { Button as UiButton } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { eventLine, humanTime, leadTitle } from "@/lib/humanize";
 import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
@@ -189,7 +190,7 @@ export default function LeadDeskPage() {
     <main data-page="lead-detail" data-pattern="detail">
       <header className="page-head" data-region="header">
         <h1>线索</h1>
-        <Link className="btn" href="/">返回工作台</Link>
+        <UiButton variant="outline" size="sm" asChild><Link href="/">返回工作台</Link></UiButton>
       </header>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       {err ? (
@@ -203,9 +204,7 @@ export default function LeadDeskPage() {
                 <Button variant="secondary" type="button" size="sm" onClick={() => setReload((n) => n + 1)}>
                   重试
                 </Button>
-                <Link className="btn" href="/leads">
-                  返回线索列表
-                </Link>
+                <UiButton variant="outline" size="sm" asChild><Link href="/leads">返回线索列表</Link></UiButton>
               </>
             }
           />
@@ -293,7 +292,7 @@ export default function LeadDeskPage() {
             <DateTimeField label="下一次" value={nextAt} onChange={setNextAt} />
             <div className="queue-actions">
               {/* P0：原链接 href 指向 /leads/${id}（详情页自己），点了原地不动；收敛为返回线索列表。 */}
-              <Link className="btn" href="/leads">返回线索列表</Link>
+              <UiButton variant="outline" size="sm" asChild><Link href="/leads">返回线索列表</Link></UiButton>
               <Button
                 variant="primary"
                 type="button"

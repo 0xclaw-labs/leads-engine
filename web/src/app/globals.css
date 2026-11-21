@@ -882,6 +882,12 @@ textarea {
 }
 @media (prefers-reduced-motion: reduce) {
   :where(.public-form-page, .chat-shell, [data-page="reception"]) * { scroll-behavior: auto; animation-duration: .01ms; transition-duration: .01ms; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
 }
 
 @tailwind base;

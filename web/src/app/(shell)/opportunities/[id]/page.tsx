@@ -28,6 +28,7 @@ import {
 import { SurfaceState } from "@/components/workbench/chrome";
 import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { Button, Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
+import { Button as UiButton } from "@/components/ui/button";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, productError } from "@/lib/productShell";
 import { postJson } from "@/lib/fetchJson";
@@ -253,7 +254,7 @@ export default function OpportunityDetailPage() {
               <Button variant="secondary" type="button" size="sm" onClick={() => void load()}>
                 重试
               </Button>
-              <Link className="btn" href="/opportunities">返回商机列表</Link>
+              <UiButton variant="outline" size="sm" asChild><Link href="/opportunities">返回商机列表</Link></UiButton>
             </>
           }
         />

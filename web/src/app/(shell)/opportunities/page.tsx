@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
 import { SegmentedControl } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
 import { MISSING_SCOPE, failureText, pagePrimary, productError } from "@/lib/productShell";
 import {
   BUSINESS_CATEGORIES,
@@ -146,9 +147,11 @@ export default function OpportunitiesPage() {
     <main data-page="opportunities">
       <header className="page-head">
         <h1>商机管理</h1>
-        <Link className="btn primary" data-page-primary="true" href={items && items[0] ? `/opportunities/${items[0].id}` : "/opportunities"}>
-          {pagePrimary("opportunities")}
-        </Link>
+        <Button size="sm" data-page-primary="true" asChild>
+          <Link href={items && items[0] ? `/opportunities/${items[0].id}` : "/opportunities"}>
+            {pagePrimary("opportunities")}
+          </Link>
+        </Button>
       </header>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <p className="muted">
@@ -203,7 +206,7 @@ export default function OpportunitiesPage() {
         title={drawerBody?.title || "商机详情"}
         busy={drawerBusy}
         width={width}
-        footer={drawerId ? <Link className="btn" href={`/opportunities/${drawerId}`}>打开完整商机</Link> : null}
+        footer={drawerId ? <Button variant="outline" size="sm" asChild><Link href={`/opportunities/${drawerId}`}>打开完整商机</Link></Button> : null}
       >
         {drawerErr ? <SurfaceState kind="error" title="商机没有打开" detail={drawerErr} /> : null}
         {!drawerErr && !drawerBody && drawerBusy ? (

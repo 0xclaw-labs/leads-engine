@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
-import { Button, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Input } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, productError } from "@/lib/productShell";
 
@@ -100,30 +102,35 @@ export default function EnterprisesPage() {
       setRows([]);
       return;
     }
-    const h = listTenantHeader(tenant.trim()) ?? {};
-    const capRes = await fetch("/api/enterprise-directory/capability", { headers: h });
-    const cap = (await readJSON(capRes)) as Capability;
-    if (!capRes.ok) {
-      setCapability(null);
+    try {
+      const h = listTenantHeader(tenant.trim()) ?? {};
+      const capRes = await fetch("/api/enterprise-directory/capability", { headers: h });
+      const cap = (await readJSON(capRes)) as Capability;
+      if (!capRes.ok) {
+        setCapability(null);
+        setRows([]);
+        setError(failureText(cap, capRes.status));
+        return;
+      }
+      setCapability(cap);
+      const params = new URLSearchParams();
+      const f = filter ?? { industry: filterIndustry, region: filterRegion, scale: filterScale };
+      if (f.industry.trim()) params.set("industry", f.industry.trim());
+      if (f.region.trim()) params.set("region", f.region.trim());
+      if (f.scale.trim()) params.set("scale", f.scale.trim());
+      const q = params.toString();
+      const listRes = await fetch("/api/enterprise-directory/records" + (q ? `?${q}` : ""), { headers: h });
+      const list = await readJSON(listRes);
+      if (!listRes.ok) {
+        setError(failureText(list, listRes.status));
+        setRows([]);
+        return;
+      }
+      setRows((list.items as EnterpriseRow[]) ?? []);
+    } catch (e) {
+      setError(productError((e as Error).message));
       setRows([]);
-      setError(failureText(cap, capRes.status));
-      return;
     }
-    setCapability(cap);
-    const params = new URLSearchParams();
-    const f = filter ?? { industry: filterIndustry, region: filterRegion, scale: filterScale };
-    if (f.industry.trim()) params.set("industry", f.industry.trim());
-    if (f.region.trim()) params.set("region", f.region.trim());
-    if (f.scale.trim()) params.set("scale", f.scale.trim());
-    const q = params.toString();
-    const listRes = await fetch("/api/enterprise-directory/records" + (q ? `?${q}` : ""), { headers: h });
-    const list = await readJSON(listRes);
-    if (!listRes.ok) {
-      setError(failureText(list, listRes.status));
-      setRows([]);
-      return;
-    }
-    setRows((list.items as EnterpriseRow[]) ?? []);
   }, [filterIndustry, filterRegion, filterScale]);
 
   useEffect(() => {
@@ -144,78 +151,92 @@ export default function EnterprisesPage() {
   const importBatch = async () => {
     setError("");
     setPreview(null);
-    const res = await fetch("/api/enterprise-directory/imports", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
-        source_key: sourceKey.trim(),
-        source_name: sourceName.trim(),
-        collected_at: collectedAt.trim(),
-        update_cycle_days: Number(cycle),
-        license: license.trim(),
-        correction: correction.trim(),
-        records: [
-          {
-            enterprise_id: enterpriseID.trim(),
-            enterprise_name: enterpriseName.trim(),
-            industry: industry.trim(),
-            region: region.trim(),
-            scale: scale.trim(),
-            person_name: personName.trim(),
-            person_phone: personPhone.trim(),
-            person_email: "",
-          },
-        ],
-      }),
-    });
-    const body = await readJSON(res);
-    if (!res.ok) {
-      setError(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch("/api/enterprise-directory/imports", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          source_key: sourceKey.trim(),
+          source_name: sourceName.trim(),
+          collected_at: collectedAt.trim(),
+          update_cycle_days: Number(cycle),
+          license: license.trim(),
+          correction: correction.trim(),
+          records: [
+            {
+              enterprise_id: enterpriseID.trim(),
+              enterprise_name: enterpriseName.trim(),
+              industry: industry.trim(),
+              region: region.trim(),
+              scale: scale.trim(),
+              person_name: personName.trim(),
+              person_phone: personPhone.trim(),
+              person_email: "",
+            },
+          ],
+        }),
+      });
+      const body = await readJSON(res);
+      if (!res.ok) {
+        setError(failureText(body, res.status));
+        return;
+      }
+      await load(tenant);
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    await load(tenant);
   };
 
   const openPreview = async (id: string) => {
     setError("");
     setConfirmText("");
-    const res = await fetch(`/api/enterprise-directory/records/${id}/preview`, { headers: listTenantHeader(tenant) ?? {} }) ?? {};
-    const body = (await readJSON(res)) as Preview;
-    if (!res.ok) {
-      setPreview(null);
-      setError(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch(`/api/enterprise-directory/records/${id}/preview`, { headers: listTenantHeader(tenant) ?? {} });
+      const body = (await readJSON(res)) as Preview;
+      if (!res.ok) {
+        setPreview(null);
+        setError(failureText(body, res.status));
+        return;
+      }
+      setPreview(body);
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    setPreview(body);
   };
 
   const act = async (id: string, action: "confirm" | "refuse" | "delete") => {
     setError("");
-    const res = await fetch(`/api/enterprise-directory/records/${id}/${action}`, {
-      method: "POST",
-      headers: headers(),
-    });
-    const body = await readJSON(res);
-    if (!res.ok) {
-      setConfirmText(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch(`/api/enterprise-directory/records/${id}/${action}`, {
+        method: "POST",
+        headers: headers(),
+      });
+      const body = await readJSON(res);
+      if (!res.ok) {
+        setConfirmText(failureText(body, res.status));
+        return;
+      }
+      const done =
+        action === "confirm"
+          ? `已进入本租户候选池。线索 ${String(body.lead_id ?? "")}${body.duplicate ? "（重复，未新建）" : ""}。营销同意：否。外呼/短信/SOP：无。来源 ${String(body.source_app ?? "")}。`
+          : action === "refuse"
+            ? "已拒绝。同一来源再次导入这家企业不能恢复营销。"
+            : "已删除。同一来源再次导入这家企业不能恢复营销。";
+      setPreview(null);
+      await load(tenant);
+      setConfirmText(done);
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    const done =
-      action === "confirm"
-        ? `已进入本租户候选池。线索 ${String(body.lead_id ?? "")}${body.duplicate ? "（重复，未新建）" : ""}。营销同意：否。外呼/短信/SOP：无。来源 ${String(body.source_app ?? "")}。`
-        : action === "refuse"
-          ? "已拒绝。同一来源再次导入这家企业不能恢复营销。"
-          : "已删除。同一来源再次导入这家企业不能恢复营销。";
-    setPreview(null);
-    await load(tenant);
-    setConfirmText(done);
   };
 
   return (
     <main data-page="enterprises">
       <header className="page-head">
         <h1>企业资料筛选</h1>
-        <Link className="btn" href="/">返回工作台</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/">返回工作台</Link>
+        </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <div className="card" id="capability">
@@ -266,7 +287,7 @@ export default function EnterprisesPage() {
           <Input id="person-name" label="联系人姓名（可选，不是营销同意）" value={personName} onChange={(e) => setPersonName(e.target.value)} />{" "}
           <Input id="person-phone" label="联系人电话（可选）" value={personPhone} onChange={(e) => setPersonPhone(e.target.value)} />
         </p>
-        <Button id="import-submit" variant="primary" type="button" size="sm" data-page-primary="true" onClick={() => void importBatch()}>
+        <Button id="import-submit" type="button" size="sm" data-page-primary="true" onClick={() => void importBatch()}>
           导入到本租户
         </Button>
       </div>
@@ -279,7 +300,7 @@ export default function EnterprisesPage() {
         <Button id="filter-submit" variant="secondary" type="button" size="sm" onClick={() => void load(tenant)}>
           筛选
         </Button>
-        {error ? <p className="muted">{error}</p> : null}
+        {error ? <Alert variant="destructive" role="alert"><AlertDescription>{error}</AlertDescription></Alert> : null}
         <RecordList
           width={width}
           rows={(rows ?? []).map((row) => ({
@@ -323,13 +344,13 @@ export default function EnterprisesPage() {
           <p className="muted">自然人联系方式只作旁注，不构成营销许可。拒绝或删除只挡住同一来源的再次导入。</p>
           {preview.record ? (
             <p className="queue-actions">
-              <Button id="confirm-submit" variant="primary" type="button" size="sm" onClick={() => void act(preview.record!.id, "confirm")}>
+              <Button id="confirm-submit" type="button" size="sm" onClick={() => void act(preview.record!.id, "confirm")}>
                 确认进入本租户候选池
               </Button>{" "}
               <Button id="refuse-submit" variant="secondary" type="button" size="sm" onClick={() => void act(preview.record!.id, "refuse")}>
                 拒绝
               </Button>{" "}
-              <Button id="delete-submit" variant="danger" type="button" size="sm" onClick={() => void act(preview.record!.id, "delete")}>
+              <Button id="delete-submit" variant="destructive" type="button" size="sm" onClick={() => void act(preview.record!.id, "delete")}>
                 删除
               </Button>
             </p>

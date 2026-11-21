@@ -1,8 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { failureText } from "@/lib/productShell";
+import { failureText, productError } from "@/lib/productShell";
 import { presentCampaignMotion } from "@/lib/campaignMotion";
 import { presentCampaignProduction, validateHandoffFacts } from "@/lib/campaignMotionQueue";
 
@@ -84,45 +94,50 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
   const load = useCallback(async () => {
     if (!campaignId || !scope.tenant) return;
     const init = scopeInit(scope.tenant);
-    const capRes = await fetch("/api/campaign-motion/capability", init);
-    // HUI-2626 盲评 P2①：capability 关闭时是 200+enabled:false，据此隐藏；
-    // 404 兜底保留（旧服务端契约）。不再让探测打进 console。
-    if (capRes.status === 404) {
-      setHidden(true);
-      return;
+    try {
+      const capRes = await fetch("/api/campaign-motion/capability", init);
+      // HUI-2626 盲评 P2①：capability 关闭时是 200+enabled:false，据此隐藏；
+      // 404 兜底保留（旧服务端契约）。不再让探测打进 console。
+      if (capRes.status === 404) {
+        setHidden(true);
+        return;
+      }
+      const cap = (await capRes.json().catch(() => null)) as MotionCapability | null;
+      if (cap && cap.enabled === false) {
+        setHidden(true);
+        return;
+      }
+      setHidden(false);
+      const C0_TEMPLATES = ["immediate", "night_batch", "free_idle", "paid_elastic"];
+      setAllowedTemplates(
+        Array.isArray(cap?.allowed_templates)
+          ? cap.allowed_templates.filter((item): item is string => typeof item === "string" && C0_TEMPLATES.includes(item))
+          : [],
+      );
+      const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, init);
+      if (res.status === 404) {
+        setMessage("当前线索不是活动。这一步只交出活动事实。");
+        return;
+      }
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => null)) as MotionResponse | null;
+        setMessage(failureText(errBody, res.status));
+        return;
+      }
+      const body = (await res.json()) as MotionResponse;
+      setQueueView(body.job_queue_view);
+      setHumanPending(body.human_followup_pending === true);
+      setProductionMeta({
+        model_calls: typeof body.model_calls === "number" ? body.model_calls : 0,
+        channel_count: typeof body.channel_count === "number" ? body.channel_count : 0,
+        model_cost_minor: typeof body.model_cost_minor === "number" ? body.model_cost_minor : null,
+        payer_kind: typeof body.payer_kind === "string" ? body.payer_kind : "",
+      });
+      applyExport(body.export);
+    } catch (e) {
+      setMessage(productError(e instanceof Error ? e.message : "活动动效加载失败"));
+      setHidden(false);
     }
-    const cap = (await capRes.json().catch(() => null)) as MotionCapability | null;
-    if (cap && cap.enabled === false) {
-      setHidden(true);
-      return;
-    }
-    setHidden(false);
-    const C0_TEMPLATES = ["immediate", "night_batch", "free_idle", "paid_elastic"];
-    setAllowedTemplates(
-      Array.isArray(cap?.allowed_templates)
-        ? cap.allowed_templates.filter((item): item is string => typeof item === "string" && C0_TEMPLATES.includes(item))
-        : [],
-    );
-    const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, init);
-    if (res.status === 404) {
-      setMessage("当前线索不是活动。这一步只交出活动事实。");
-      return;
-    }
-    if (!res.ok) {
-      const errBody = (await res.json().catch(() => null)) as MotionResponse | null;
-      setMessage(failureText(errBody, res.status));
-      return;
-    }
-    const body = (await res.json()) as MotionResponse;
-    setQueueView(body.job_queue_view);
-    setHumanPending(body.human_followup_pending === true);
-    setProductionMeta({
-      model_calls: typeof body.model_calls === "number" ? body.model_calls : 0,
-      channel_count: typeof body.channel_count === "number" ? body.channel_count : 0,
-      model_cost_minor: typeof body.model_cost_minor === "number" ? body.model_cost_minor : null,
-      payer_kind: typeof body.payer_kind === "string" ? body.payer_kind : "",
-    });
-    applyExport(body.export);
   }, [applyExport, campaignId, scope.tenant]);
 
   useEffect(() => {
@@ -160,19 +175,24 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
     }
     const headers = new Headers(scopeInit(scope.tenant).headers);
     headers.set("content-type", "application/json");
-    const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-    const body = (await res.json().catch(() => null)) as MotionResponse | null;
-    setBusy(false);
-    if (!res.ok) {
-      setMessage(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const body = (await res.json().catch(() => null)) as MotionResponse | null;
+      if (!res.ok) {
+        setMessage(failureText(body, res.status));
+        return;
+      }
+      applyExport(body?.export);
+      setMessage(presentCampaignMotion(null).status);
+    } catch (e) {
+      setMessage(productError(e instanceof Error ? e.message : "交出失败"));
+    } finally {
+      setBusy(false);
     }
-    applyExport(body?.export);
-    setMessage(presentCampaignMotion(null).status);
   }
 
   return (
@@ -181,66 +201,70 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
       <p data-testid="campaign-motion-notice">{view.notice}</p>
       {recorded ? <p data-testid="campaign-motion-status">{view.status}</p> : null}
       <p>{view.conversionNote}</p>
-      <label>
-        活动目标
-        <input value={goal} onChange={(e) => setGoal(e.target.value)} />
-      </label>
-      <label>
-        目标受众
-        <input value={audience} onChange={(e) => setAudience(e.target.value)} />
-      </label>
-      <label>
-        已确认的品牌或产品事实
-        <input value={fact} onChange={(e) => setFact(e.target.value)} />
-      </label>
-      <label>
-        已授权素材 id
-        <input value={assetID} onChange={(e) => setAssetID(e.target.value)} />
-      </label>
-      <label>
-        CTA
-        <input value={cta} onChange={(e) => setCta(e.target.value)} />
-      </label>
-      <label>
-        渠道名
-        <input value={channels} onChange={(e) => setChannels(e.target.value)} placeholder="抖音、视频号" />
-      </label>
-      <label>
-        预算归属 id
-        <input value={budgetID} onChange={(e) => setBudgetID(e.target.value)} />
-      </label>
-      <label>
-        Motion project_id
-        <input value={projectID} onChange={(e) => setProjectID(e.target.value)} />
-      </label>
-      <label>
-        Motion revision_id
-        <input value={revisionID} onChange={(e) => setRevisionID(e.target.value)} />
-      </label>
-      <label>
-        Motion digest
-        <input value={digest} onChange={(e) => setDigest(e.target.value)} />
-      </label>
+      <div className="public-form-field">
+        <Label htmlFor="motion-goal">活动目标</Label>
+        <Input id="motion-goal" value={goal} onChange={(e) => setGoal(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-audience">目标受众</Label>
+        <Input id="motion-audience" value={audience} onChange={(e) => setAudience(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-fact">已确认的品牌或产品事实</Label>
+        <Input id="motion-fact" value={fact} onChange={(e) => setFact(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-asset-id">已授权素材 id</Label>
+        <Input id="motion-asset-id" value={assetID} onChange={(e) => setAssetID(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-cta">CTA</Label>
+        <Input id="motion-cta" value={cta} onChange={(e) => setCta(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-channels">渠道名</Label>
+        <Input id="motion-channels" value={channels} onChange={(e) => setChannels(e.target.value)} placeholder="抖音、视频号" />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-budget-id">预算归属 id</Label>
+        <Input id="motion-budget-id" value={budgetID} onChange={(e) => setBudgetID(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-project-id">Motion project_id</Label>
+        <Input id="motion-project-id" value={projectID} onChange={(e) => setProjectID(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-revision-id">Motion revision_id</Label>
+        <Input id="motion-revision-id" value={revisionID} onChange={(e) => setRevisionID(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="motion-digest">Motion digest</Label>
+        <Input id="motion-digest" value={digest} onChange={(e) => setDigest(e.target.value)} />
+      </div>
       <p>
         渠道：{view.channels.join("、") || "还没有渠道名"}
       </p>
       {allowedTemplates.length > 0 ? (
-        <label>
-          执行偏好（只从服务器允许的模板选）
-          <select value={preference} onChange={(e) => setPreference(e.target.value)} data-field="preference">
-            <option value="">按服务器默认</option>
-            {allowedTemplates.map((template) => (
-              <option key={template} value={template}>{template}</option>
-            ))}
-          </select>
-        </label>
+        <div className="public-form-field">
+          <Label htmlFor="motion-preference">执行偏好（只从服务器允许的模板选）</Label>
+          <Select value={preference} onValueChange={setPreference}>
+            <SelectTrigger id="motion-preference" data-field="preference" className="w-full sm:w-64">
+              <SelectValue placeholder="按服务器默认" />
+            </SelectTrigger>
+            <SelectContent>
+              {allowedTemplates.map((template) => (
+                <SelectItem key={template} value={template}>{template}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       ) : (
         <p data-field="preference-unknown">服务器未提供允许的执行模板；本页不传数字优先级。</p>
       )}
-      <button type="button" disabled={busy || !goal.trim() || !budgetID.trim() || view.channels.length === 0} onClick={() => void save()}>
+      <Button type="button" size="sm" disabled={busy || !goal.trim() || !budgetID.trim() || view.channels.length === 0} onClick={() => void save()}>
         记下交出
-      </button>
-      {message ? <p>{message}</p> : null}
+      </Button>
+      {message ? <p role="alert">{message}</p> : null}
       <section data-campaign-production="true">
         <p data-field="waiting">
           {production.waitLabel}：{production.etaText}

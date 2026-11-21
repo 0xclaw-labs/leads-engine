@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { scopeInit } from "@/lib/eco-nav/use-crm-scope";
 import {
   modelStatusText,
@@ -80,30 +90,35 @@ export function IntentOnOpportunity({
       setLeads([]);
       return;
     }
-    const res = await fetch("/api/leads", scopeInit(tenant));
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setNote(body.message ?? "线索列表没有读到");
+    try {
+      const res = await fetch("/api/leads", scopeInit(tenant));
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNote(body.message ?? "线索列表没有读到");
+        setLeads([]);
+        return;
+      }
+      const matched = ((body.items ?? []) as LeadRow[]).filter((item) => item.contact_id === contactId);
+      setLeads(matched);
+      if (matched.length === 0) {
+        setNote("这个联系人还没有线索，不编造级别。");
+        setRows({});
+        return;
+      }
+      setNote("");
+      const next: Record<string, GradeSnapshot | null> = {};
+      for (const lead of matched) {
+        const current = await fetch(
+          `/api/intent-grades/current?subject_kind=lead&subject_id=${encodeURIComponent(lead.id)}`,
+          scopeInit(tenant),
+        );
+        next[lead.id] = current.ok ? ((await current.json()) as GradeSnapshot) : null;
+      }
+      setRows(next);
+    } catch {
+      setNote("线索列表没有读到，请检查网络后重试。");
       setLeads([]);
-      return;
     }
-    const matched = ((body.items ?? []) as LeadRow[]).filter((item) => item.contact_id === contactId);
-    setLeads(matched);
-    if (matched.length === 0) {
-      setNote("这个联系人还没有线索，不编造级别。");
-      setRows({});
-      return;
-    }
-    setNote("");
-    const next: Record<string, GradeSnapshot | null> = {};
-    for (const lead of matched) {
-      const current = await fetch(
-        `/api/intent-grades/current?subject_kind=lead&subject_id=${encodeURIComponent(lead.id)}`,
-        scopeInit(tenant),
-      );
-      next[lead.id] = current.ok ? ((await current.json()) as GradeSnapshot) : null;
-    }
-    setRows(next);
   }, [contactId, tenant]);
 
   useEffect(() => {
@@ -134,6 +149,8 @@ export function IntentOnOpportunity({
       }
       setNote("");
       await load();
+    } catch {
+      setNote("评估没有完成，请检查网络后重试。");
     } finally {
       setBusy(false);
     }
@@ -169,6 +186,8 @@ export function IntentOnOpportunity({
       }
       setNote("");
       await load();
+    } catch {
+      setNote("修正没有保存，请检查网络后重试。");
     } finally {
       setBusy(false);
     }
@@ -208,52 +227,58 @@ export function IntentOnOpportunity({
             )}
             {outreachGranted(snap?.permissions) ? <p>返回了触达许可，此页只保留下一步建议。</p> : null}
             {buttons.length > 0 ? <p>{buttons.join("、")}</p> : null}
-            <p>
-              <label>
-                本租户可见的原文
-                <br />
-                <textarea
-                  value={text[lead.id] ?? ""}
-                  onChange={(e) => setText((prev) => ({ ...prev, [lead.id]: e.target.value }))}
-                  rows={3}
-                  cols={60}
-                />
-              </label>
-            </p>
-            <button type="button" disabled={busy} onClick={() => void score(lead.id)}>
+            <div className="public-form-field">
+              <Label htmlFor={`ev-${lead.id}`}>本租户可见的原文</Label>
+              <Textarea
+                id={`ev-${lead.id}`}
+                value={text[lead.id] ?? ""}
+                onChange={(e) => setText((prev) => ({ ...prev, [lead.id]: e.target.value }))}
+                rows={3}
+              />
+            </div>
+            <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => void score(lead.id)}>
               用规则重新评估
-            </button>
+            </Button>
             {snap?.id ? (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                 }}
               >
-                <label>
-                  分级{" "}
-                  <select value={grade} onChange={(e) => setGrade(e.target.value)}>
-                    <option value="high">高</option>
-                    <option value="medium">中</option>
-                    <option value="low">低</option>
-                    <option value="insufficient">信息不足</option>
-                  </select>
-                </label>
-                <p>
-                  <label>
-                    原因
-                    <br />
-                    <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} cols={60} />
-                  </label>
-                </p>
+                <div className="public-form-field">
+                  <Label htmlFor={`grade-${lead.id}`}>分级</Label>
+                  <Select value={grade} onValueChange={setGrade}>
+                    <SelectTrigger id={`grade-${lead.id}`} aria-label="分级">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="high">高</SelectItem>
+                      <SelectItem value="medium">中</SelectItem>
+                      <SelectItem value="low">低</SelectItem>
+                      <SelectItem value="insufficient">信息不足</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="public-form-field">
+                  <Label htmlFor={`reason-${lead.id}`}>原因</Label>
+                  <Textarea
+                    id={`reason-${lead.id}`}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={2}
+                  />
+                </div>
                 {salesCorrectionActions().map((action) => (
-                  <button
+                  <Button
                     key={action}
+                    variant="secondary"
+                    size="sm"
                     type="button"
                     disabled={busy}
                     onClick={() => void correct(lead.id, action === "驳回" ? "rejected" : "adopted")}
                   >
                     {action}
-                  </button>
+                  </Button>
                 ))}
               </form>
             ) : null}

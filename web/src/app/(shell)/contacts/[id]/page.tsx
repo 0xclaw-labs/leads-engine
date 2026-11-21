@@ -15,6 +15,8 @@ import {
 } from "@/lib/contact";
 import { SurfaceState } from "@/components/workbench/chrome";
 import { Button, ConfirmDialog, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, pagePrimary, productError } from "@/lib/productShell";
 
@@ -235,7 +237,10 @@ export default function ContactDetailPage() {
           <div>
             <Input label="标签(逗号分隔)" value={edit.tags} onChange={(e) => setEdit({ ...edit, tags: e.target.value })} />
           </div>
-          <textarea value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} placeholder="备注" />
+          <div className="public-form-field">
+            <Label htmlFor="contact-notes">备注</Label>
+            <Textarea id="contact-notes" value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} placeholder="备注" />
+          </div>
           <div className="queue-actions">
             <Button variant="primary" type="button" size="sm" data-page-primary="true" loading={busy} onClick={patchProfile}>{pagePrimary("contact-detail")}</Button>
             <Button variant="danger" type="button" size="sm" loading={busy} onClick={() => post("/revoke-marketing", { reason: "商家在档案页停止营销" })}>
@@ -287,7 +292,10 @@ export default function ContactDetailPage() {
         {followups.length === 0 ? <p className="muted">暂无跟进记录。</p> : null}
         {allowed ? (
           <div>
-            <textarea value={followupNote} onChange={(e) => setFollowupNote(e.target.value)} placeholder="追加跟进(只追加,不可修改;全文不入日志)" />
+            <div className="public-form-field">
+              <Label htmlFor="contact-followup">追加跟进</Label>
+              <Textarea id="contact-followup" value={followupNote} onChange={(e) => setFollowupNote(e.target.value)} placeholder="追加跟进(只追加,不可修改;全文不入日志)" />
+            </div>
             <div className="queue-actions">
               <Button
                 variant="secondary"
