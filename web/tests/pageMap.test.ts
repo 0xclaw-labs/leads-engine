@@ -76,7 +76,7 @@ describe("frozen pattern ids", () => {
     const rows = catalog();
     expect(rows.map((row) => row.id)).toEqual(ids);
     for (const row of rows) validateDeclaration(row);
-    rows[0].regions[0] = "mutated";
+    (rows[0].regions as string[])[0] = "mutated";
     expect(catalog()[0].regions[0]).toBe("primary_action");
   });
 });
@@ -167,7 +167,7 @@ describe("route ledger", () => {
       validateDeclaration(entry);
     }
 
-    book[0].regions[0] = "mutated";
+    (book[0].regions as string[])[0] = "mutated";
     expect(routeLedger()[0].regions).toEqual(["primary_action", "status", "empty"]);
   });
 

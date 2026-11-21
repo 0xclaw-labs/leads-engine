@@ -30,7 +30,7 @@ describe("authorized channel interactions", () => {
     expect(actions.href).toBe("/channel-interactions");
     expect(actions.href).not.toContain(secret);
     expect(marketingLabels({ phone: "", phone_marketing: true, sms_marketing: true })).toEqual([]);
-    expect(receiptLine({ score: 99, receipt_platform: true, receipt_persisted: true, receipt_human: false })).toBe(
+    expect(receiptLine({ receipt_platform: true, receipt_persisted: true, receipt_human: false })).toBe(
       "平台事件已接收 · 获客已落库",
     );
   });

@@ -6,6 +6,15 @@
 //   - 成功页展示撤销渠道文案;逐项展示服务端 400 details;429/410 显式提示。
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -53,6 +62,23 @@ function newPageRef(): string {
   return "page-" + Date.now().toString(36);
 }
 
+function FormSkeleton() {
+  return (
+    <main className="public-form-page" role="status" aria-label="表单加载中">
+      <Skeleton className="h-7 w-32" />
+      <Skeleton className="h-4 w-2/3" />
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-5 w-1/2" />
+          <Skeleton className="h-9 w-24" />
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
+
 function Landing() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
@@ -78,7 +104,10 @@ function Landing() {
   }, [search, pageRef]);
 
   useEffect(() => {
-    if (!formId) return;
+    if (!formId) {
+      setLoadError({ status: 0, message: "表单链接无效" });
+      return;
+    }
     fetch(formPublicPath(formId))
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
@@ -124,94 +153,113 @@ function Landing() {
   if (loadError) {
     const gone = loadError.status === 410;
     return (
-      <main>
+      <main className="public-form-page">
         <h1>表单不可用</h1>
-        <p className="muted">
-          {gone
-            ? "该表单已停止收集或已过期,感谢您的关注。"
-            : "表单不存在或暂不可用,请核对链接后重试。"}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertTitle>{gone ? "已停止收集" : "暂不可用"}</AlertTitle>
+          <AlertDescription>
+            {gone
+              ? "该表单已停止收集或已过期,感谢您的关注。"
+              : "表单不存在或暂不可用,请核对链接后重试。"}
+          </AlertDescription>
+        </Alert>
       </main>
     );
   }
   if (!desc) {
-    return (
-      <main>
-        <h1>加载中…</h1>
-      </main>
-    );
+    return <FormSkeleton />;
   }
   if (done) {
     return (
-      <main>
+      <main className="public-form-page" role="status" aria-live="polite">
         <h1>提交成功</h1>
         <p>
           感谢您的留言,我们会尽快与您联系。
           {done.duplicate ? "(检测到重复提交,已保留您此前的一次提交)" : ""}
         </p>
-        <div className="card">
-          <h2>关于您的授权</h2>
-          <ul>
-            <li>告知版本:{done.notice_version || desc.notice_version}</li>
-            <li>
+        <Card className="public-form-card">
+          <CardHeader>
+            <CardTitle>关于您的授权</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p>告知版本:{done.notice_version || desc.notice_version}</p>
+            <p>
               营销信息:{done.marketing_allowed ? "已同意接收,可随时撤销" : "未开通(您未勾选营销同意,我们不会将您用于营销触达)"}
-            </li>
-          </ul>
-          <p className="muted">{done.revoke_hint || REVOKE_HINT_FALLBACK}</p>
-        </div>
+            </p>
+            <Badge variant="secondary">{done.marketing_allowed ? "已授权营销" : "未授权营销"}</Badge>
+            <p className="muted">{done.revoke_hint || REVOKE_HINT_FALLBACK}</p>
+          </CardContent>
+        </Card>
       </main>
     );
   }
 
   const fields = collectableFields(desc);
+  const fieldValue = (nameKey: string) => (nameKey === "name" ? name : nameKey === "phone" ? phone : wechat);
+  const setFieldValue = (nameKey: string, v: string) => {
+    if (nameKey === "name") setName(v);
+    else if (nameKey === "phone") setPhone(v);
+    else setWechat(v);
+  };
+
   return (
-    <main>
+    <main className="public-form-page">
       <h1>咨询留言</h1>
       <p className="muted">
         用途:{desc.purpose || "处理您的咨询"} · 告知版本:{desc.notice_version}
       </p>
-      <div className="card">
-        {fields.map((f) => (
-          <div key={f.name} style={{ marginBottom: 12 }}>
-            <label htmlFor={`f-${f.name}`}>{FIELD_LABELS[f.name] ?? "其他信息"}</label>
-            <br />
-            <input
-              id={`f-${f.name}`}
-              type="text"
-              value={f.name === "name" ? name : f.name === "phone" ? phone : wechat}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (f.name === "name") setName(v);
-                else if (f.name === "phone") setPhone(v);
-                else setWechat(v);
-              }}
-              maxLength={f.name === "name" ? 100 : f.name === "phone" ? 32 : 64}
-              style={{ width: "100%" }}
+      <Card className="public-form-card">
+        <CardContent className="space-y-4">
+          {fields.map((f) => {
+            const invalid = issues.some((issue) => issue.field === f.name);
+            return (
+              <div key={f.name} className="public-form-field">
+                <Label htmlFor={`f-${f.name}`}>{FIELD_LABELS[f.name] ?? "其他信息"}</Label>
+                <Input
+                  id={`f-${f.name}`}
+                  type="text"
+                  value={fieldValue(f.name)}
+                  onChange={(e) => setFieldValue(f.name, e.target.value)}
+                  maxLength={f.name === "name" ? 100 : f.name === "phone" ? 32 : 64}
+                  aria-invalid={invalid}
+                  aria-describedby={invalid ? `error-${f.name}` : undefined}
+                  disabled={submitting}
+                />
+              </div>
+            );
+          })}
+          <Label htmlFor="form-marketing" className="flex items-center gap-2 font-normal">
+            <Checkbox
+              id="form-marketing"
+              checked={marketing}
+              disabled={submitting}
+              onCheckedChange={setMarketing}
             />
-          </div>
-        ))}
-        <label>
-          <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
-          {desc.marketing_prompt || "我同意接收该商家的营销信息(可随时撤销)"}
-        </label>
-        {issues.map((iss, i) => (
-          <p key={i} style={{ color: "#b00" }}>
-            {FIELD_LABELS[iss.field] ?? "其他信息"}：{issueText(iss)}
-          </p>
-        ))}
-        {serverError ? <p style={{ color: "#b00" }}>{serverError}</p> : null}
-        <button type="button" onClick={submit} disabled={submitting}>
-          {submitting ? "提交中…" : "提交"}
-        </button>
-        <p className="muted">{REVOKE_HINT_FALLBACK}</p>
-      </div>
+            {desc.marketing_prompt || "我同意接收该商家的营销信息(可随时撤销)"}
+          </Label>
+          {issues.map((iss) => (
+            <p key={`${iss.field}-${iss.message}`} id={`error-${iss.field}`} className="error" role="alert">
+              {FIELD_LABELS[iss.field] ?? "其他信息"}：{issueText(iss)}
+            </p>
+          ))}
+          {serverError ? (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{serverError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <Button type="button" onClick={submit} disabled={submitting} className="w-full sm:w-auto">
+            {submitting ? "提交中…" : "提交"}
+          </Button>
+          <p className="muted">{REVOKE_HINT_FALLBACK}</p>
+        </CardContent>
+      </Card>
     </main>
   );
 }
 
 export default function FormLandingPage() {
   return (
-    <Suspense fallback={<main><h1>加载中…</h1></main>}>
+    <Suspense fallback={<FormSkeleton />}>
       <Landing />
     </Suspense>
   );
