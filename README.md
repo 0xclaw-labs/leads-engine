@@ -87,3 +87,7 @@ cd web && npm run build
 | HUI-1683/1680 线索接收 | `POST /api/v1/leads` + `source_refs`(非 manual 来源必须留痕已就位);notify client 挂 `server/internal/platform` |
 | HUI-1692 跟进 | leads 状态机细化 + 跟进记录新表 |
 | HUI-1693 / FEAT-0194 商机 | `opportunities` 扩展字段与阶段机 |
+
+## 发布纪律(deploy-hygiene-20261113)
+
+- 本仓尚无 CI 发布入口(当前人工上 Primary A `120.26.69.202`,systemd `leads-server`/`leads-web`)。按 DEPLOY-STANDARD-2026-11-13 待建 `.github/workflows/deploy.yml`(push main → CI 全绿 → 自动部署;凭据=专用部署钥匙 `ci-deploy-120`,repo secret `VPS_DEPLOY_KEY`)前,人工发布逐次留痕(时间/原因/SHA);**个人/机器散钥匙不参与发布**。
