@@ -274,9 +274,9 @@ export default function OpportunityDetailPage() {
       <p className="muted">类别:{opp.business_category}(按类别隔离展示与统计)</p>
       <ul>
         <li>当前阶段:{STAGE_LABELS[stage] ?? opp.stage}{opp.stage === "won" ? "(仅人工标记,非收款事实)" : ""}</li>
-        <li>金额:{amt.text}{amt.unknown ? "" : `(${amt.sourceLabel})`}</li>
-        <li>{probabilityText(opp.probability)}</li>
-        <li>{expectedCloseText(opp.expected_close_at)}</li>
+        <li>金额:<span data-numeric="true">{amt.text}{amt.unknown ? "" : `(${amt.sourceLabel})`}</span></li>
+        <li><span data-numeric="true">{probabilityText(opp.probability)}</span></li>
+        <li><span data-numeric="true">{expectedCloseText(opp.expected_close_at)}</span></li>
       </ul>
 
       {allowed ? (

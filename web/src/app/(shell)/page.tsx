@@ -305,7 +305,7 @@ export default function Home() {
               <li key={row.group}>
                 <a className="attention-chip" href={row.href} data-attention-group={row.group}>
                   {row.label}
-                  <strong>{row.count}</strong>
+                  <strong data-numeric="true">{row.count}</strong>
                 </a>
               </li>
             ))}
@@ -329,7 +329,7 @@ export default function Home() {
           <ul className="money-lines">
             {lines.lines.map((line) => (
               <li key={line.key}>
-                {line.label}：{centsText(line.cents)}
+                {line.label}：<span data-numeric="true">{centsText(line.cents)}</span>
               </li>
             ))}
           </ul>
@@ -374,7 +374,7 @@ export default function Home() {
               <header className="today-group-head">
                 <h2>
                   {TODAY_LABELS[key]}
-                  <span className="today-count">{rows.length}</span>
+                  <span className="today-count" data-numeric="true">{rows.length}</span>
                 </h2>
                 <p className="muted">{GROUP_HINT[key]}</p>
               </header>

@@ -145,9 +145,9 @@ export default function OpportunitiesPage() {
     const amt = amountView(o.amount_cents, o.amount_source);
     return [
       { label: "阶段", value: STAGE_LABELS[o.stage as keyof typeof STAGE_LABELS] ?? o.stage },
-      { label: "金额", value: amt.unknown ? amt.text : `${amt.text}（${amt.sourceLabel}）` },
-      { label: "把握", value: probabilityText(o.probability) },
-      { label: "期望成交", value: o.expected_close_at || "未定" },
+      { label: "金额", value: amt.unknown ? amt.text : `${amt.text}（${amt.sourceLabel}）`, numeric: true },
+      { label: "把握", value: probabilityText(o.probability), numeric: true },
+      { label: "期望成交", value: o.expected_close_at || "未定", numeric: true },
     ];
   };
 
@@ -185,7 +185,7 @@ export default function OpportunitiesPage() {
         <ul className="funnel">
           {OPPORTUNITY_STAGES.map((st) => (
             <li key={st}>
-              {STAGE_LABELS[st]}:{stats.funnel?.[st] ?? 0}
+              {STAGE_LABELS[st]}:<span data-numeric="true">{stats.funnel?.[st] ?? 0}</span>
             </li>
           ))}
         </ul>
@@ -226,7 +226,7 @@ export default function OpportunitiesPage() {
               {oppFacts(drawerBody).map((fact) => (
                 <li key={fact.label}>
                   <span>{fact.label}</span>
-                  <strong>{fact.value}</strong>
+                  <strong data-numeric={fact.numeric || undefined}>{fact.value}</strong>
                 </li>
               ))}
             </ul>

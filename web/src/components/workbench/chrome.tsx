@@ -46,6 +46,14 @@ export function ToneBadge({ tone }: { tone: FactTone }) {
   );
 }
 
+// LD-07：事实项。numeric 仅标记金额/概率/日期/计数等数字语境，
+// 渲染层据此挂等宽数字；数据层格式化函数与文案语义不动。
+export interface FactItem {
+  label: string;
+  value: string;
+  numeric?: boolean;
+}
+
 // HUI-2626 盲评 P2①：空/错/恢复态的标记不再是无图形的灰块——内联 SVG 图标
 // （零网络请求，不存在 404 路径）；loading 保留渐变骨架原样。
 function StateMarkGlyph({ kind }: { kind: "loading" | "empty" | "error" | "recovery" }) {
@@ -125,7 +133,7 @@ export function RecordFrame({
   width: number;
   tone: FactTone;
   title: string;
-  facts: { label: string; value: string }[];
+  facts: FactItem[];
   primary?: ReactNode;
   secondary?: ReactNode;
   children?: ReactNode;
@@ -145,7 +153,7 @@ export function RecordFrame({
           {facts.map((fact) => (
             <li key={fact.label}>
               <span>{fact.label}</span>
-              <strong>{fact.value}</strong>
+              <strong data-numeric={fact.numeric || undefined}>{fact.value}</strong>
             </li>
           ))}
         </ul>
@@ -154,7 +162,7 @@ export function RecordFrame({
           {facts.map((fact) => (
             <div key={fact.label}>
               <dt>{fact.label}</dt>
-              <dd>{fact.value}</dd>
+              <dd data-numeric={fact.numeric || undefined}>{fact.value}</dd>
             </div>
           ))}
         </dl>
@@ -173,7 +181,7 @@ export function RecordList({
     id: string;
     title: string;
     tone?: FactTone;
-    facts: { label: string; value: string }[];
+    facts: FactItem[];
     href?: string;
     action?: string;
     primary?: boolean;

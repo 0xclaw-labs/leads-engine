@@ -116,7 +116,7 @@ export default function AttributionPage() {
           {view.revenueLines.map((line) => (
             <li key={line.key}>
               {line.label}
-              {line.authority ? `（${line.authority}）` : ""}：{centsText(line.cents)}
+              {line.authority ? `（${line.authority}）` : ""}：<span data-numeric="true">{centsText(line.cents)}</span>
               {view.showCompleteRoi ? `，ROI ${line.roiText}` : "，ROI 不展示"}
             </li>
           ))}
