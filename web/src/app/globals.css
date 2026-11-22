@@ -394,6 +394,12 @@ button.primary,
   gap: 0.75rem;
 }
 
+/* LD-07：金额/概率/日期/计数等数字语境使用等宽数字，避免列内纵向跳动；
+   只改数字字形宽度，不改字号、字重与对齐。 */
+[data-numeric="true"] {
+  font-variant-numeric: tabular-nums;
+}
+
 .record-frame {
   background: var(--surface);
   border: 1px solid var(--line);

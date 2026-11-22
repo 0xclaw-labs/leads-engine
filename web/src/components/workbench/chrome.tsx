@@ -21,6 +21,7 @@ import {
   type FactTone,
   type WorkScope,
 } from "@/lib/productShell";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const ShellWidthContext = createContext(1440);
 
@@ -44,6 +45,14 @@ export function ToneBadge({ tone }: { tone: FactTone }) {
       {toneLabel(tone)}
     </span>
   );
+}
+
+// LD-07：事实项。numeric 仅标记金额/概率/日期/计数等数字语境，
+// 渲染层据此挂等宽数字；数据层格式化函数与文案语义不动。
+export interface FactItem {
+  label: string;
+  value: string;
+  numeric?: boolean;
 }
 
 // HUI-2626 盲评 P2①：空/错/恢复态的标记不再是无图形的灰块——内联 SVG 图标
@@ -125,7 +134,7 @@ export function RecordFrame({
   width: number;
   tone: FactTone;
   title: string;
-  facts: { label: string; value: string }[];
+  facts: FactItem[];
   primary?: ReactNode;
   secondary?: ReactNode;
   children?: ReactNode;
@@ -145,7 +154,7 @@ export function RecordFrame({
           {facts.map((fact) => (
             <li key={fact.label}>
               <span>{fact.label}</span>
-              <strong>{fact.value}</strong>
+              <strong data-numeric={fact.numeric || undefined}>{fact.value}</strong>
             </li>
           ))}
         </ul>
@@ -154,7 +163,7 @@ export function RecordFrame({
           {facts.map((fact) => (
             <div key={fact.label}>
               <dt>{fact.label}</dt>
-              <dd>{fact.value}</dd>
+              <dd data-numeric={fact.numeric || undefined}>{fact.value}</dd>
             </div>
           ))}
         </dl>
@@ -173,7 +182,7 @@ export function RecordList({
     id: string;
     title: string;
     tone?: FactTone;
-    facts: { label: string; value: string }[];
+    facts: FactItem[];
     href?: string;
     action?: string;
     primary?: boolean;
@@ -205,6 +214,45 @@ export function RecordList({
           />
         );
       })}
+    </div>
+  );
+}
+
+// LD-07：列表加载态的逐行/逐块骨架。外层容器承担 role=status + aria-busy 语义，
+// 内层骨架条全部 aria-hidden；骨架行数贴近真实卡片结构（标题 + 若干事实条），
+// 可见的加载文案仍由 SurfaceState 承担，不用纯装饰 div 传达加载。
+export function RecordListSkeleton({ rows = 3, facts = 4 }: { rows?: number; facts?: number }) {
+  return (
+    <div className="record-list" data-skeleton-list="true" role="status" aria-busy="true" aria-label="内容加载中">
+      {Array.from({ length: rows }, (_, rowIndex) => (
+        <article className="record-frame" data-skeleton-row="true" aria-hidden="true" key={rowIndex}>
+          <header className="record-head">
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-5 w-2/5" />
+          </header>
+          <ul data-facts="chips" aria-hidden="true">
+            {Array.from({ length: facts }, (_, factIndex) => (
+              <li key={factIndex}>
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-20" />
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+// LD-07：纯文本记录列表（无卡片结构）的逐行骨架，节奏对齐真实条目行。
+export function LineListSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div data-skeleton-list="true" role="status" aria-busy="true" aria-label="内容加载中">
+      {Array.from({ length: rows }, (_, rowIndex) => (
+        <div className="record-frame" data-skeleton-row="true" aria-hidden="true" key={rowIndex}>
+          <Skeleton className="h-4 w-full" />
+        </div>
+      ))}
     </div>
   );
 }

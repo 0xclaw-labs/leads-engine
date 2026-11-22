@@ -90,11 +90,11 @@ export default function SubscriptionPage() {
         <ul>
           {view.lines.map((line) => (
             <li key={line.key} data-testid={`subscription-${line.key}`}>
-              {line.label}：{centsLabel(line.cents)}
+              {line.label}：<span data-numeric="true">{centsLabel(line.cents)}</span>
             </li>
           ))}
         </ul>
-        <p data-testid="subscription-wallet">平台钱包观察值：{centsLabel(view.walletCents)}</p>
+        <p data-testid="subscription-wallet">平台钱包观察值：<span data-numeric="true">{centsLabel(view.walletCents)}</span></p>
         <p data-testid="subscription-plan">{view.crmOpened ? "CRM 套餐：已开通" : "CRM 套餐：未开通"}</p>
         <p data-testid="subscription-history">
           {view.dataLost ? "历史被标成丢失" : "联系人、跟进和商机历史仍在"}

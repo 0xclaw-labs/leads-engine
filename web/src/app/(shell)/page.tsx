@@ -7,7 +7,7 @@
 import Link from "next/link";
 // 默认导入供 vitest/esbuild 的 classic JSX 转换使用（Next SWC automatic runtime 不受影响）。
 import React, { useEffect, useRef, useState } from "react";
-import { RecordFrame, SurfaceState, ToneBadge, useShellWidth } from "@/components/workbench/chrome";
+import { RecordFrame, RecordListSkeleton, SurfaceState, ToneBadge, useShellWidth } from "@/components/workbench/chrome";
 import { ConversationPanel } from "@/components/workbench/conversationPanel";
 import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
@@ -305,7 +305,7 @@ export default function Home() {
               <li key={row.group}>
                 <a className="attention-chip" href={row.href} data-attention-group={row.group}>
                   {row.label}
-                  <strong>{row.count}</strong>
+                  <strong data-numeric="true">{row.count}</strong>
                 </a>
               </li>
             ))}
@@ -329,7 +329,7 @@ export default function Home() {
           <ul className="money-lines">
             {lines.lines.map((line) => (
               <li key={line.key}>
-                {line.label}：{centsText(line.cents)}
+                {line.label}：<span data-numeric="true">{centsText(line.cents)}</span>
               </li>
             ))}
           </ul>
@@ -353,6 +353,7 @@ export default function Home() {
       {scope.tenant && !err && visible === null ? (
         <div data-state="loading" data-region="loading">
           <SurfaceState kind="loading" title="正在整理今天的工作" detail="分组和金额马上就位。" />
+          <RecordListSkeleton rows={3} />
         </div>
       ) : null}
       {scope.tenant && !err && visible && attention.empty ? (
@@ -374,7 +375,7 @@ export default function Home() {
               <header className="today-group-head">
                 <h2>
                   {TODAY_LABELS[key]}
-                  <span className="today-count">{rows.length}</span>
+                  <span className="today-count" data-numeric="true">{rows.length}</span>
                 </h2>
                 <p className="muted">{GROUP_HINT[key]}</p>
               </header>

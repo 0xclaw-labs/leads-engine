@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
+import { RecordList, RecordListSkeleton, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
@@ -295,7 +295,12 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {items === null && !error ? <SurfaceState kind="loading" title="正在读取客户" detail="姓名、来源和授权马上就位。" /> : null}
+      {items === null && !error ? (
+        <div data-state="loading" data-region="loading">
+          <SurfaceState kind="loading" title="正在读取客户" detail="姓名、来源和授权马上就位。" />
+          <RecordListSkeleton rows={3} />
+        </div>
+      ) : null}
       {items !== null && items.length === 0 && !error ? (
         <SurfaceState kind="empty" title="还没有客户" detail="这个范围里还没有你能查看的档案。别人名下的档案不会出现在这里。" />
       ) : null}
