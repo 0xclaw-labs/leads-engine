@@ -85,7 +85,15 @@ export default function OpportunitiesPage() {
         return;
       }
       setItems(listBody.items ?? []);
-      if (statsRes.ok) setStats(await statsRes.json());
+      if (statsRes.ok) {
+        // 统计次级端点即便 200 也可能形体不全；解析失败不落 error 态打断列表，
+        // 仅清空 stats，渲染层 statsLine/漏斗按缺省值与「—」收口。
+        try {
+          setStats((await statsRes.json()) as OpportunityStatsBody);
+        } catch {
+          setStats(null);
+        }
+      }
     } catch (e) {
       if (gen.current !== ticket || scope.tenant !== ticket.tenant) return;
       setError(productError((e as Error).message));
@@ -177,7 +185,7 @@ export default function OpportunitiesPage() {
         <ul className="funnel">
           {OPPORTUNITY_STAGES.map((st) => (
             <li key={st}>
-              {STAGE_LABELS[st]}:{stats.funnel[st] ?? 0}
+              {STAGE_LABELS[st]}:{stats.funnel?.[st] ?? 0}
             </li>
           ))}
         </ul>

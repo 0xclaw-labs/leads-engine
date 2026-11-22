@@ -5,7 +5,6 @@ import { useState } from "react";
 import { RendererProvider, Status } from "@/vendor/painuo/react/v1/src/index";
 import { SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
@@ -97,7 +96,7 @@ export default function AttributionPage() {
         <CardContent className="space-y-3">
           <div className="public-form-field">
             <Label htmlFor="roi-citation">来源、事件与费用引用</Label>
-            <Textarea
+            <textarea
               id="roi-citation"
               value={raw}
               onChange={(e) => setRaw(e.target.value)}

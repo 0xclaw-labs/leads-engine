@@ -135,11 +135,19 @@ export interface OpportunityStatsBody {
 
 // statsLine:单类别统计的一行说明;金额只有「可核实合计」,未知数量单独展示,
 // 绝不把未知金额折算进合计,也绝不跨类别相加。
-export function statsLine(s: OpportunityStatsBody): string {
+// 防御口径:次级端点可能返回 200 但形体不全(缺 amounts/funnel/total)。这里对
+// amounts/unknown_count/known_total_cents/total 全部做可选链与缺省值;形体缺失时
+// 展示「—」,绝不把未知金额折算成 0,也不补造可核实合计。
+export function statsLine(s: OpportunityStatsBody | null | undefined): string {
+  if (!s) return "—";
   const cat = isBusinessCategory(s.business_category)
     ? CATEGORY_LABELS[s.business_category]
-    : s.business_category;
-  const unknown = s.amounts.unknown_count;
+    : s.business_category ?? "—";
+  const amounts = s.amounts ?? {};
+  const unknown = amounts.unknown_count ?? 0;
   const unknownPart = unknown > 0 ? `,另有 ${unknown} 单金额未知(不计入合计)` : "";
-  return `${cat}:${s.total} 单,可核实金额合计 ${formatCents(s.amounts.known_total_cents)}${unknownPart}`;
+  const total = typeof s.total === "number" ? s.total : 0;
+  const knownTotal = amounts.known_total_cents;
+  const knownPart = typeof knownTotal === "number" ? formatCents(knownTotal) : "—";
+  return `${cat}:${total} 单,可核实金额合计 ${knownPart}${unknownPart}`;
 }
