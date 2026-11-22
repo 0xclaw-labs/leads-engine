@@ -5,8 +5,19 @@
 // 的事实显示"—"，绝不显示完成态。返回路径固定回本活动页。
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { failureText } from "@/lib/productShell";
+import { failureText, productError } from "@/lib/productShell";
 import { MATRIX_DRAFT_NOTICE, presentMatrixDraftRow, type MatrixDraftView } from "@/lib/matrixDraft";
 
 interface DraftResponse {
@@ -43,19 +54,23 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
 
   const load = useCallback(async () => {
     if (!campaignId || !scope.tenant) return;
-    const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts`, scopeInit(scope.tenant));
-    if (res.status === 404) {
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts`, scopeInit(scope.tenant));
+      if (res.status === 404) {
+        setHidden(true);
+        return;
+      }
+      if (!res.ok) {
+        setHidden(true);
+        return;
+      }
+      setHidden(false);
+      const body = (await res.json().catch(() => null)) as ListResponse | null;
+      const row = body?.drafts?.[0];
+      if (row) applyRow(row);
+    } catch {
       setHidden(true);
-      return;
     }
-    if (!res.ok) {
-      setHidden(true);
-      return;
-    }
-    setHidden(false);
-    const body = (await res.json().catch(() => null)) as ListResponse | null;
-    const row = body?.drafts?.[0];
-    if (row) applyRow(row);
   }, [applyRow, campaignId, scope.tenant]);
 
   useEffect(() => {
@@ -81,76 +96,87 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
       payer_id: payerID.trim(),
     };
     if (assetSourceRef.trim()) payload.asset_source_ref = assetSourceRef.trim();
-    // No local shortcut: the matrix service decides every create, including a replay.
-    const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-    const body = (await res.json().catch(() => null)) as (DraftResponse & { error?: unknown }) | null;
-    setBusy(false);
-    if (!res.ok) {
-      setMessage(failureText(body, res.status));
-      return;
+    try {
+      // No local shortcut: the matrix service decides every create, including a replay.
+      const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const body = (await res.json().catch(() => null)) as (DraftResponse & { error?: unknown }) | null;
+      if (!res.ok) {
+        setMessage(failureText(body, res.status));
+        return;
+      }
+      applyRow(body ?? {});
+      setMessage(body?.idempotent_replay === true ? "同样的内容已经记录过，仍是同一条草稿引用。" : MATRIX_DRAFT_NOTICE);
+    } catch (e) {
+      setMessage(productError(e instanceof Error ? e.message : "送矩阵失败"));
+    } finally {
+      setBusy(false);
     }
-    applyRow(body ?? {});
-    setMessage(body?.idempotent_replay === true ? "同样的内容已经记录过，仍是同一条草稿引用。" : MATRIX_DRAFT_NOTICE);
   }
 
   async function recheck() {
     if (!scope.tenant || !refID || busy) return;
     setBusy(true);
     setMessage("");
-    const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts/${refID}/receipt`, scopeInit(scope.tenant));
-    const body = (await res.json().catch(() => null)) as (DraftResponse & { error?: unknown }) | null;
-    setBusy(false);
-    if (!res.ok) {
-      setMessage(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts/${refID}/receipt`, scopeInit(scope.tenant));
+      const body = (await res.json().catch(() => null)) as (DraftResponse & { error?: unknown }) | null;
+      if (!res.ok) {
+        setMessage(failureText(body, res.status));
+        return;
+      }
+      applyRow(body ?? {});
+      setMessage("回查完成：这是矩阵服务当前保存的草稿事实；未知字段仍是未知。");
+    } catch (e) {
+      setMessage(productError(e instanceof Error ? e.message : "回查失败"));
+    } finally {
+      setBusy(false);
     }
-    applyRow(body ?? {});
-    setMessage("回查完成：这是矩阵服务当前保存的草稿事实；未知字段仍是未知。");
   }
 
   return (
     <section className="card stack-form">
       <h2>获客内容送矩阵</h2>
       <p data-testid="matrix-draft-notice">{MATRIX_DRAFT_NOTICE}</p>
-      <label>
-        内容资产 id
-        <input value={assetID} onChange={(e) => setAssetID(e.target.value)} placeholder="asset_copy_1" />
-      </label>
-      <label>
-        内容哈希（64 位十六进制）
-        <input value={assetHash} onChange={(e) => setAssetHash(e.target.value)} placeholder="ab12…（64 位）" />
-      </label>
-      <label>
-        内容版本
-        <input value={revision} onChange={(e) => setRevision(e.target.value)} />
-      </label>
-      <label>
-        授权引用 grant_ref
-        <input value={grantRef} onChange={(e) => setGrantRef(e.target.value)} />
-      </label>
-      <label>
-        素材许可 license_ref
-        <input value={licenseRef} onChange={(e) => setLicenseRef(e.target.value)} />
-      </label>
-      <label>
-        品牌 id
-        <input value={brandID} onChange={(e) => setBrandID(e.target.value)} />
-      </label>
-      <label>
-        付款方 id
-        <input value={payerID} onChange={(e) => setPayerID(e.target.value)} />
-      </label>
-      <label>
-        资产来源声明（可选）
-        <input value={assetSourceRef} onChange={(e) => setAssetSourceRef(e.target.value)} placeholder="touch/landing/camp-matrix" />
-      </label>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
+      <div className="public-form-field">
+        <Label htmlFor="matrix-asset-id">内容资产 id</Label>
+        <Input id="matrix-asset-id" value={assetID} onChange={(e) => setAssetID(e.target.value)} placeholder="asset_copy_1" />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="matrix-asset-hash">内容哈希（64 位十六进制）</Label>
+        <Input id="matrix-asset-hash" value={assetHash} onChange={(e) => setAssetHash(e.target.value)} placeholder="ab12…（64 位）" />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="matrix-revision">内容版本</Label>
+        <Input id="matrix-revision" value={revision} onChange={(e) => setRevision(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="matrix-grant-ref">授权引用 grant_ref</Label>
+        <Input id="matrix-grant-ref" value={grantRef} onChange={(e) => setGrantRef(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="matrix-license-ref">素材许可 license_ref</Label>
+        <Input id="matrix-license-ref" value={licenseRef} onChange={(e) => setLicenseRef(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="matrix-brand-id">品牌 id</Label>
+        <Input id="matrix-brand-id" value={brandID} onChange={(e) => setBrandID(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="matrix-payer-id">付款方 id</Label>
+        <Input id="matrix-payer-id" value={payerID} onChange={(e) => setPayerID(e.target.value)} />
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="matrix-source-ref">资产来源声明（可选）</Label>
+        <Input id="matrix-source-ref" value={assetSourceRef} onChange={(e) => setAssetSourceRef(e.target.value)} placeholder="touch/landing/camp-matrix" />
+      </div>
+      <div className="queue-actions">
+        <Button
           type="button"
+          size="sm"
           data-testid="matrix-draft-submit"
           disabled={
             busy ||
@@ -165,60 +191,60 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
           onClick={() => void submit()}
         >
           送矩阵
-        </button>
-        <button type="button" data-testid="matrix-draft-recheck" disabled={busy || !refID} onClick={() => void recheck()}>
+        </Button>
+        <Button type="button" variant="secondary" size="sm" data-testid="matrix-draft-recheck" disabled={busy || !refID} onClick={() => void recheck()}>
           回查草稿事实
-        </button>
+        </Button>
       </div>
       {view ? (
-        <table data-testid="matrix-draft-facts">
-          <tbody>
-            <tr>
-              <th>草稿 id</th>
-              <td>{view.draftId || "—"}</td>
-            </tr>
-            <tr>
-              <th>状态</th>
-              <td>{view.status || "—"}</td>
-            </tr>
-            <tr>
-              <th>矩阵 plan / item / 外发 id</th>
-              <td>
+        <Table data-testid="matrix-draft-facts">
+          <TableBody>
+            <TableRow>
+              <TableHead>草稿 id</TableHead>
+              <TableCell>{view.draftId || "—"}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>状态</TableHead>
+              <TableCell>{view.status || "—"}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>矩阵 plan / item / 外发 id</TableHead>
+              <TableCell>
                 {view.matrixPlanID} / {view.matrixItemID} / {view.externalPostID}
-              </td>
-            </tr>
-            <tr>
-              <th>触达 / 点赞 / 线索</th>
-              <td>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>触达 / 点赞 / 线索</TableHead>
+              <TableCell>
                 {view.matrixReach} / {view.matrixLikes} / {view.matrixLeads}
-              </td>
-            </tr>
-            <tr>
-              <th>发布标记</th>
-              <td>{view.published ? "true" : "false"}</td>
-            </tr>
-            <tr>
-              <th>扣费标记</th>
-              <td>{view.charged ? "true" : "false"}</td>
-            </tr>
-            <tr>
-              <th>资产来源声明</th>
-              <td>{view.assetSourceRef}</td>
-            </tr>
-            <tr>
-              <th>返回锚点（服务端 return_path）</th>
-              <td>{view.returnPath}</td>
-            </tr>
-            <tr>
-              <th>回原位</th>
-              <td>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>发布标记</TableHead>
+              <TableCell>{view.published ? "true" : "false"}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>扣费标记</TableHead>
+              <TableCell>{view.charged ? "true" : "false"}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>资产来源声明</TableHead>
+              <TableCell>{view.assetSourceRef}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>返回锚点（服务端 return_path）</TableHead>
+              <TableCell>{view.returnPath}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableHead>回原位</TableHead>
+              <TableCell>
                 <a href={`/leads/${campaignId}`} data-testid="matrix-draft-return">回本活动页</a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
       ) : null}
-      {message ? <p data-testid="matrix-draft-message">{message}</p> : null}
+      {message ? <p role="alert" data-testid="matrix-draft-message">{message}</p> : null}
     </section>
   );
 }

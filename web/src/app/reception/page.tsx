@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { RecordFrame, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
-import { Button } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, acceptDeskPayload, factTone, listTenantHeader, pagePrimary, productError, receptionSessionFrame } from "@/lib/productShell";
 import { MODE_TEXT, PENDING_TEXT } from "@/lib/reception";
@@ -120,7 +120,9 @@ export default function ReceptionDeskPage() {
     <main data-page="reception">
       <header className="page-head">
         <h1>接待工作台</h1>
-        <Link className="btn" href={returnFocus ? todayReturnHref(returnFocus) : "/"}>{returnFocus ? "返回继续" : "返回工作台"}</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={returnFocus ? todayReturnHref(returnFocus) : "/"}>{returnFocus ? "返回继续" : "返回工作台"}</Link>
+        </Button>
       </header>
       <p className="muted">
         <span data-tone="human">人工事实</span> 当前身份：{ROLE_TEXT[role] ?? "未确认"}。当前负责人、待处理原因和人工待办。
@@ -151,7 +153,7 @@ export default function ReceptionDeskPage() {
           <SurfaceState kind="empty" title="没有进行中的接待" detail="新的咨询进来后会出现在这里。" />
         </div>
       ) : null}
-      <div className="record-list">
+      <section className="record-list reception-queue" aria-label="待接待队列">
         {(items ?? []).map((item, index) => {
           const open = () => {
             setSelected(item.session_id);
@@ -173,7 +175,7 @@ export default function ReceptionDeskPage() {
                 { label: "下一次跟进", value: item.next_follow_up_at || "未安排" },
               ]}
               primary={primary ? (
-                <Button variant="primary" type="button" size="sm" data-page-primary="true" onClick={open}>
+                <Button variant="default" type="button" size="sm" data-page-primary="true" onClick={open}>
                   {pagePrimary("reception")}
                 </Button>
               ) : undefined}
@@ -185,7 +187,7 @@ export default function ReceptionDeskPage() {
             />
           );
         })}
-      </div>
+      </section>
       {panel ? (
         <SessionPanel tenant={panel.tenant} sessionId={panel.sessionId} onChanged={() => setReload((n) => n + 1)} />
       ) : null}

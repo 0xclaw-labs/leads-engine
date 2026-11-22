@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
 import { SegmentedControl } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
 import { MISSING_SCOPE, failureText, pagePrimary, productError } from "@/lib/productShell";
 import {
   BUSINESS_CATEGORIES,
@@ -84,7 +85,15 @@ export default function OpportunitiesPage() {
         return;
       }
       setItems(listBody.items ?? []);
-      if (statsRes.ok) setStats(await statsRes.json());
+      if (statsRes.ok) {
+        // 统计次级端点即便 200 也可能形体不全；解析失败不落 error 态打断列表，
+        // 仅清空 stats，渲染层 statsLine/漏斗按缺省值与「—」收口。
+        try {
+          setStats((await statsRes.json()) as OpportunityStatsBody);
+        } catch {
+          setStats(null);
+        }
+      }
     } catch (e) {
       if (gen.current !== ticket || scope.tenant !== ticket.tenant) return;
       setError(productError((e as Error).message));
@@ -146,9 +155,11 @@ export default function OpportunitiesPage() {
     <main data-page="opportunities">
       <header className="page-head">
         <h1>商机管理</h1>
-        <Link className="btn primary" data-page-primary="true" href={items && items[0] ? `/opportunities/${items[0].id}` : "/opportunities"}>
-          {pagePrimary("opportunities")}
-        </Link>
+        <Button size="sm" data-page-primary="true" asChild>
+          <Link href={items && items[0] ? `/opportunities/${items[0].id}` : "/opportunities"}>
+            {pagePrimary("opportunities")}
+          </Link>
+        </Button>
       </header>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <p className="muted">
@@ -174,7 +185,7 @@ export default function OpportunitiesPage() {
         <ul className="funnel">
           {OPPORTUNITY_STAGES.map((st) => (
             <li key={st}>
-              {STAGE_LABELS[st]}:{stats.funnel[st] ?? 0}
+              {STAGE_LABELS[st]}:{stats.funnel?.[st] ?? 0}
             </li>
           ))}
         </ul>
@@ -203,7 +214,7 @@ export default function OpportunitiesPage() {
         title={drawerBody?.title || "商机详情"}
         busy={drawerBusy}
         width={width}
-        footer={drawerId ? <Link className="btn" href={`/opportunities/${drawerId}`}>打开完整商机</Link> : null}
+        footer={drawerId ? <Button variant="outline" size="sm" asChild><Link href={`/opportunities/${drawerId}`}>打开完整商机</Link></Button> : null}
       >
         {drawerErr ? <SurfaceState kind="error" title="商机没有打开" detail={drawerErr} /> : null}
         {!drawerErr && !drawerBody && drawerBusy ? (

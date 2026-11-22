@@ -65,6 +65,38 @@ describe("category isolation", () => {
   });
 });
 
+// ---- statsLine 形体不全防御（次级端点缺字段不白屏） -------------------------------
+
+describe("statsLine defensive against malformed stats body", () => {
+  it("does not throw when amounts/funnel/total are missing or null", () => {
+    const cases: Array<Record<string, unknown>> = [
+      {},
+      { business_category: "merchant_customer" },
+      { business_category: "creative_service", total: 1 },
+      { business_category: "merchant_customer", total: 1, funnel: {} },
+      { business_category: "merchant_customer", total: 1, amounts: {} },
+      { amounts: { unknown_count: 2 } },
+    ];
+    for (const body of cases) {
+      expect(() => statsLine(body as unknown as OpportunityStatsBody)).not.toThrow();
+    }
+    expect(statsLine(null)).toBe("—");
+    expect(statsLine(undefined)).toBe("—");
+  });
+
+  it("shows — for a missing known total instead of fabricating a zero amount", () => {
+    const line = statsLine({
+      business_category: "merchant_customer",
+      total: 0,
+      funnel: {},
+      amounts: {},
+    } as unknown as OpportunityStatsBody);
+    expect(line).toContain("商家经营销售");
+    expect(line).toContain("—");
+    expect(line).not.toContain("¥0.00");
+  });
+});
+
 // ---- 金额未知语义 ---------------------------------------------------------------
 
 describe("amount view", () => {

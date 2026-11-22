@@ -12,6 +12,7 @@ import { ConversationPanel } from "@/components/workbench/conversationPanel";
 import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Textarea } from "@/vendor/painuo/react/v1/src/index";
+import { Button as UiButton } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { postJson } from "@/lib/fetchJson";
 import { factTone, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
@@ -360,7 +361,7 @@ export default function Home() {
             kind="empty"
             title="今天没有需要处理的客户工作"
             detail="新的咨询、到期的跟进、未回复的会话和待确认的草稿会按顺序出现在这里。先去线索或接待看看也可以。"
-            action={<Link className="btn" href="/leads">打开线索列表</Link>}
+            action={<UiButton variant="outline" size="sm" asChild><Link href="/leads">打开线索列表</Link></UiButton>}
           />
         </div>
       ) : null}
@@ -512,9 +513,11 @@ function TodayRow({
           ) : null}
           {/* HUI-2626 行内导航至多一个：展开会话是控件，真正跳转只留一条。 */}
           {destination ? (
-            <Link className="btn" href={destination.href} data-desk-action={destination.kind === "conversation" ? undefined : NARROW_ACTIONS[0]}>
-              {destination.kind === "conversation" ? "在接待台打开" : destination.label}
-            </Link>
+            <UiButton variant="outline" size="sm" asChild>
+              <Link href={destination.href} data-desk-action={destination.kind === "conversation" ? undefined : NARROW_ACTIONS[0]}>
+                {destination.kind === "conversation" ? "在接待台打开" : destination.label}
+              </Link>
+            </UiButton>
           ) : null}
         </div>
         {conversationOpen && item.session_id ? (

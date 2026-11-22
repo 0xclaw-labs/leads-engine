@@ -6,6 +6,7 @@ import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Button, Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
+import { Button as UiButton } from "@/components/ui/button";
 import { canExportContacts, searchGuard } from "@/lib/contact";
 import { contactRowFacts, consentText } from "@/lib/finish";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
@@ -319,7 +320,7 @@ export default function ContactsPage() {
         width={width}
         footer={
           drawerId ? (
-            <Link className="btn" href={`/contacts/${drawerId}`}>打开完整档案</Link>
+            <UiButton variant="outline" size="sm" asChild><Link href={`/contacts/${drawerId}`}>打开完整档案</Link></UiButton>
           ) : null
         }
       >

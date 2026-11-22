@@ -25,6 +25,7 @@ import {
   type ShellEntryFailure,
   type WorkScope,
 } from "@/lib/productShell";
+import { Button } from "@/components/ui/button";
 import { RendererProvider } from "@/vendor/painuo/react/v1/src/index";
 
 // 入口三种死路分开指路：未登录给入口指引（不伪造登录链接）、无范围给管理员路径、
@@ -55,9 +56,9 @@ export function CrmEntryState({ failure, onRetry }: { failure: ShellEntryFailure
       title={copy.title}
       detail={copy.detail}
       action={
-        <button type="button" className="btn" onClick={onRetry}>
+        <Button type="button" size="sm" onClick={onRetry}>
           重试
-        </button>
+        </Button>
       }
     />
   );
@@ -277,9 +278,9 @@ export function CrmShell({
           <div className="eco-nav-fault" role="status" data-eco-nav-fault="unavailable">
             <span>生态导航暂不可用</span>
             <span className="muted">{navFault}</span>
-            <button type="button" className="btn" onClick={() => setNavReload((n) => n + 1)}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setNavReload((n) => n + 1)}>
               重试导航
-            </button>
+            </Button>
           </div>
         ) : null}
         <DeskFrame scopes={switcher} scopeEmptyLabel={entryFailure === "unauthenticated" ? "未登录" : undefined} onScopeSwitch={(tenant) => reconcileSession(tenant)}>

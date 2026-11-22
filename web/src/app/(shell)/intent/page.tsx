@@ -3,7 +3,17 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
-import { Button, Checkbox, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Checkbox, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, domainFailureText, listTenantHeader, productError } from "@/lib/productShell";
 import { modelStatusText, originLabel, outreachControls, presentAssessment, type GradeInput, type GradeView } from "@/lib/intentGrade";
@@ -132,27 +142,36 @@ export default function IntentGradePage() {
   const [misjudgment, setMisjudgment] = useState(true);
   const [report, setReport] = useState<ReportOutcome[] | null>(null);
   const [reportNote, setReportNote] = useState("");
+  const [reportError, setReportError] = useState(false);
 
   const headers = useCallback((): HeadersInit => ({ "content-type": "application/json", ...listTenantHeader(tenant) }), [tenant]);
 
   const loadReport = useCallback(async () => {
     setReportNote("");
+    setReportError(false);
     if (!tenant) {
       setReport(null);
       setReportNote("先在顶部选择工作范围，再看标注样本。这些样本不是真人成交记录。");
       return;
     }
-    const res = await fetch("/api/intent-grades/sample-report", { headers: listTenantHeader(tenant) ?? {} });
-    // ⑥ flag 域：解析失败（mux text/plain 404）按「功能未开通」指引，不再把
-    // 功能关闭说成记录不存在。
-    const body = (await res.json().catch(() => null)) as { outcomes?: ReportOutcome[]; disclaimer?: string } | null;
-    if (!res.ok) {
+    try {
+      const res = await fetch("/api/intent-grades/sample-report", { headers: listTenantHeader(tenant) ?? {} });
+      // ⑥ flag 域：解析失败（mux text/plain 404）按「功能未开通」指引，不再把
+      // 功能关闭说成记录不存在。
+      const body = (await res.json().catch(() => null)) as { outcomes?: ReportOutcome[]; disclaimer?: string } | null;
+      if (!res.ok) {
+        setReport(null);
+        setReportError(true);
+        setReportNote(domainFailureText(res.status, body));
+        return;
+      }
+      setReport((body?.outcomes ?? []) as ReportOutcome[]);
+      setReportNote(typeof body?.disclaimer === "string" ? body.disclaimer : "");
+    } catch (e) {
       setReport(null);
-      setReportNote(domainFailureText(res.status, body));
-      return;
+      setReportError(true);
+      setReportNote(productError(e instanceof Error ? e.message : "样本报告读取失败"));
     }
-    setReport((body?.outcomes ?? []) as ReportOutcome[]);
-    setReportNote(typeof body?.disclaimer === "string" ? body.disclaimer : "");
   }, [tenant]);
 
   const score = async () => {
@@ -162,23 +181,27 @@ export default function IntentGradePage() {
       setError(tenant ? "先填写线索或会话编号" : MISSING_SCOPE);
       return;
     }
-    const res = await fetch("/api/intent-grades", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
-        subject_kind: subjectKind,
-        subject_id: subjectId.trim(),
-        evidence: text.trim() ? [{ id: "ev-page", tenant_id: tenant, text: text.trim() }] : [],
-      }),
-    });
-    const body = (await res.json().catch(() => null)) as ScoreResponse | null;
-    if (!res.ok) {
-      setError(domainFailureText(res.status, body));
-      return;
+    try {
+      const res = await fetch("/api/intent-grades", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          subject_kind: subjectKind,
+          subject_id: subjectId.trim(),
+          evidence: text.trim() ? [{ id: "ev-page", tenant_id: tenant, text: text.trim() }] : [],
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as ScoreResponse | null;
+      if (!res.ok) {
+        setError(domainFailureText(res.status, body));
+        return;
+      }
+      const snap = body?.snapshot ?? body ?? ({} as SnapshotBody);
+      setSnapshotId(snap?.id ?? "");
+      setView(presentAssessment(asInput(snap)));
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    const snap = body?.snapshot ?? body ?? ({} as SnapshotBody);
-    setSnapshotId(snap?.id ?? "");
-    setView(presentAssessment(asInput(snap)));
   };
 
   const correct = async () => {
@@ -187,25 +210,29 @@ export default function IntentGradePage() {
       setError("修正要写下采纳或驳回的原因");
       return;
     }
-    const res = await fetch(`/api/intent-grades/${snapshotId}/corrections`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
-        grade,
-        disposition,
-        misjudgment,
-        reason: correctionReason.trim(),
-        facts: [{ field: "intent", value: grade }],
-      }),
-    });
-    const body = (await res.json().catch(() => null)) as ScoreResponse | null;
-    if (!res.ok) {
-      setError(domainFailureText(res.status, body));
-      return;
+    try {
+      const res = await fetch(`/api/intent-grades/${snapshotId}/corrections`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          grade,
+          disposition,
+          misjudgment,
+          reason: correctionReason.trim(),
+          facts: [{ field: "intent", value: grade }],
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as ScoreResponse | null;
+      if (!res.ok) {
+        setError(domainFailureText(res.status, body));
+        return;
+      }
+      const snap = body?.snapshot ?? body ?? ({} as SnapshotBody);
+      setSnapshotId(snap?.id ?? snapshotId);
+      setView(presentAssessment(asInput(snap)));
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    const snap = body?.snapshot ?? body ?? ({} as SnapshotBody);
-    setSnapshotId(snap?.id ?? snapshotId);
-    setView(presentAssessment(asInput(snap)));
   };
 
   const shown = view;
@@ -215,32 +242,34 @@ export default function IntentGradePage() {
     <main data-page="intent">
       <header className="page-head">
         <h1>意向分级</h1>
-        <Link className="btn" href="/">返回工作台</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/">返回工作台</Link>
+        </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <div className="card">
         <p data-tone="ai">规则评分，不是真人成交预测，也不是校准后的成交概率。下一步只给建议，不自动外呼、短信、拉群或创建订单。</p>
         <p data-tone="ai">{modelStatusText()}</p>
-        <p>
-          <label>
-            对象{" "}
-            <select value={subjectKind} onChange={(e) => setSubjectKind(e.target.value)}>
-              <option value="lead">线索</option>
-              <option value="session">会话</option>
-            </select>
-          </label>{" "}
-          <label>
-            <Input label="编号" value={subjectId} onChange={(e) => setSubjectId(e.target.value)} placeholder="线索或会话 id" />
-          </label>
-        </p>
-        <p>
-          <label>
-            本租户可见的原文
-            <br />
-            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} cols={60} />
-          </label>
-        </p>
-        <Button variant="primary" type="button" size="sm" data-page-primary="true" onClick={score}>
+        <div className="queue-actions">
+          <div className="public-form-field">
+            <Label htmlFor="intent-subject-kind">对象</Label>
+            <Select value={subjectKind} onValueChange={setSubjectKind}>
+              <SelectTrigger id="intent-subject-kind" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="lead">线索</SelectItem>
+                <SelectItem value="session">会话</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Input label="编号" value={subjectId} onChange={(e) => setSubjectId(e.target.value)} placeholder="线索或会话 id" />
+        </div>
+        <div className="public-form-field">
+          <Label htmlFor="intent-evidence">本租户可见的原文</Label>
+          <Textarea id="intent-evidence" value={text} onChange={(e) => setText(e.target.value)} rows={4} />
+        </div>
+        <Button type="button" size="sm" data-page-primary="true" onClick={score}>
           用规则重新评估
         </Button>
         <p className="muted">重算沿用同一条用量记录，不重复扣费。人工确认过的事实不会被这次评估盖掉。</p>
@@ -283,30 +312,39 @@ export default function IntentGradePage() {
             }}
           >
             <h3>人工修正</h3>
-            <label>
-              分级{" "}
-              <select value={grade} onChange={(e) => setGrade(e.target.value)}>
-                <option value="high">高</option>
-                <option value="medium">中</option>
-                <option value="low">低</option>
-                <option value="insufficient">信息不足</option>
-              </select>
-            </label>{" "}
-            <label>
-              结论{" "}
-              <select value={disposition} onChange={(e) => setDisposition(e.target.value)}>
-                <option value="rejected">驳回</option>
-                <option value="adopted">采纳</option>
-              </select>
-            </label>{" "}
-            <Checkbox label="标记误判" checked={misjudgment} onCheckedChange={(checked) => setMisjudgment(checked)} />
-            <p>
-              <label>
-                原因
-                <br />
-                <textarea value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} rows={3} cols={60} />
-              </label>
-            </p>
+            <div className="queue-actions">
+              <div className="public-form-field">
+                <Label htmlFor="intent-grade">分级</Label>
+                <Select value={grade} onValueChange={setGrade}>
+                  <SelectTrigger id="intent-grade" className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">高</SelectItem>
+                    <SelectItem value="medium">中</SelectItem>
+                    <SelectItem value="low">低</SelectItem>
+                    <SelectItem value="insufficient">信息不足</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="public-form-field">
+                <Label htmlFor="intent-disposition">结论</Label>
+                <Select value={disposition} onValueChange={setDisposition}>
+                  <SelectTrigger id="intent-disposition" className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rejected">驳回</SelectItem>
+                    <SelectItem value="adopted">采纳</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Checkbox label="标记误判" checked={misjudgment} onCheckedChange={(checked) => setMisjudgment(checked)} />
+            </div>
+            <div className="public-form-field">
+              <Label htmlFor="intent-reason">原因</Label>
+              <Textarea id="intent-reason" value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} rows={3} />
+            </div>
             <Button variant="secondary" type="submit" size="sm">保存修正</Button>
           </form>
         </div>
@@ -316,7 +354,9 @@ export default function IntentGradePage() {
         <Button variant="secondary" type="button" size="sm" onClick={() => void loadReport()}>
           查看样本报告
         </Button>
-        {reportNote ? <p className="muted">{reportNote}</p> : null}
+        {reportNote ? (
+          <p role={reportError ? "alert" : "status"} className={reportError ? "error" : "muted"}>{reportNote}</p>
+        ) : null}
         {report ? (
           <RecordList
             width={width}

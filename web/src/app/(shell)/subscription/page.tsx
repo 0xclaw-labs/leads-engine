@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SurfaceState } from "@/components/workbench/chrome";
-import { Button } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import { centsLabel, presentSubscription, rechargeReturn, type SubscriptionFacts } from "@/lib/subscription";
@@ -71,12 +71,14 @@ export default function SubscriptionPage() {
     <main data-page="billing">
       <header className="page-head">
         <h1>订阅与用量</h1>
-        <Button variant="primary" size="sm" type="button" data-page-primary="true" disabled={!scope.tenant} onClick={() => setReload((n) => n + 1)}>
+        <Button size="sm" type="button" data-page-primary="true" disabled={!scope.tenant} onClick={() => setReload((n) => n + 1)}>
           {pagePrimary("billing")}
         </Button>
       </header>
       <p className="muted">
-        <Link className="btn" href="/">返回工作台</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/">返回工作台</Link>
+        </Button>
       </p>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <div className="card">

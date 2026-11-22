@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SurfaceState } from "@/components/workbench/chrome";
-import { Button } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, domainFailureText, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import { outboundResultLine, presentOutbound, receiptLabel, type OutboundCapability } from "@/lib/outboundCall";
@@ -52,6 +60,7 @@ export default function OutboundPage() {
   const [contacts, setContacts] = useState<ScopeContact[] | null>(null);
   const [contactId, setContactId] = useState("");
   const [consents, setConsents] = useState<ScopeConsent[] | null>(null);
+  const [consentError, setConsentError] = useState("");
   const [consentId, setConsentId] = useState("");
   const [task, setTask] = useState<OutboundTask | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,6 +111,7 @@ export default function OutboundPage() {
     setContactId("");
     setConsentId("");
     setConsents(null);
+    setConsentError("");
     setContacts(null);
     setTask(null);
     setBusy(false);
@@ -112,6 +122,7 @@ export default function OutboundPage() {
     const seq = ++consentSeq.current;
     setConsentId("");
     setConsents(null);
+    setConsentError("");
     if (!tenant.trim() || !id) return;
     try {
       const res = await fetch(`/api/contacts/${encodeURIComponent(id)}/consents`, {
@@ -119,9 +130,15 @@ export default function OutboundPage() {
       });
       const body = await res.json().catch(() => null);
       if (consentSeq.current !== seq) return;
-      setConsents(res.ok ? consentChoices(body?.items) : []);
-    } catch {
+      if (!res.ok) {
+        setConsentError(domainFailureText(res.status, body));
+        setConsents([]);
+        return;
+      }
+      setConsents(consentChoices(body?.items));
+    } catch (e) {
       if (consentSeq.current !== seq) return;
+      setConsentError(productError(e instanceof Error ? e.message : "授权读取失败"));
       setConsents([]);
     }
   }
@@ -153,7 +170,9 @@ export default function OutboundPage() {
     <main data-page="outbound">
       <header className="page-head">
         <h1>外呼安全门</h1>
-        <Link className="btn" href="/">我的工作</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/">我的工作</Link>
+        </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <div className="card">
@@ -166,43 +185,51 @@ export default function OutboundPage() {
       <div className="card">
         <h2>隔离演练</h2>
         <p className="muted">只写入模拟任务，不会自动发送，也不会扣费。公开号码和高分都不会变成拨打成功。拒绝之后换活动也不能再打。</p>
-        <p>
-          <label>
-            客户{" "}
-            <select
-              value={contactId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setContactId(id);
-                void loadConsents(tenant, id);
-              }}
-            >
-              <option value="">选择客户</option>
+        <div className="public-form-field">
+          <Label htmlFor="outbound-contact">客户</Label>
+          <Select
+            value={contactId || undefined}
+            onValueChange={(id) => {
+              setContactId(id);
+              void loadConsents(tenant, id);
+            }}
+          >
+            <SelectTrigger id="outbound-contact" className="w-full sm:w-64">
+              <SelectValue placeholder="选择客户" />
+            </SelectTrigger>
+            <SelectContent>
               {contacts?.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
+                <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
               ))}
-            </select>
-          </label>
-        </p>
+            </SelectContent>
+          </Select>
+        </div>
         {tenant && contacts && contacts.length === 0 ? <p className="muted">还没有可选的客户</p> : null}
-        <p>
-          <label>
-            语音营销授权{" "}
-            <select value={consentId} onChange={(e) => setConsentId(e.target.value)} disabled={!consents || consents.length === 0}>
-              <option value="">不选择授权</option>
+        <div className="public-form-field">
+          <Label htmlFor="outbound-consent">语音营销授权</Label>
+          <Select
+            value={consentId || undefined}
+            onValueChange={setConsentId}
+            disabled={!consents || consents.length === 0}
+          >
+            <SelectTrigger id="outbound-consent" className="w-full sm:w-64">
+              <SelectValue placeholder="不选择授权" />
+            </SelectTrigger>
+            <SelectContent>
               {consents?.map((item) => (
-                <option key={item.id} value={item.id}>{consentLabel(item)}</option>
+                <SelectItem key={item.id} value={item.id}>{consentLabel(item)}</SelectItem>
               ))}
-            </select>
-          </label>
-        </p>
-        {selected && consents && consents.length === 0 ? <p className="muted">还没有可选择的授权</p> : null}
+            </SelectContent>
+          </Select>
+        </div>
+        {selected && consents && consents.length === 0 && !consentError ? <p className="muted">还没有可选择的授权</p> : null}
+        {consentError ? <p role="alert" className="error">{consentError}</p> : null}
         {selected && !campaignId ? <p className="muted">还没有可选的活动</p> : null}
         {/* HUI-2626 fix2（gate-r2 #6 主行动收敛）：主行动只在可执行时出现；
             取消/转人工只在对已存在任务有意义时出现，不再是一排等权灰按钮。 */}
         {selected && campaignId ? (
           <Button
-            variant="primary" size="sm"
+            size="sm"
             type="button"
             data-page-primary="true"
             disabled={busy}
