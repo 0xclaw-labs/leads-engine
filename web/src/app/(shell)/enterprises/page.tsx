@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
+import { RecordList, RecordListSkeleton, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { Input } from "@/vendor/painuo/react/v1/src/index";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -301,6 +301,7 @@ export default function EnterprisesPage() {
           筛选
         </Button>
         {error ? <Alert variant="destructive" role="alert"><AlertDescription>{error}</AlertDescription></Alert> : null}
+        {rows === null ? <RecordListSkeleton rows={3} /> : null}
         <RecordList
           width={width}
           rows={(rows ?? []).map((row) => ({

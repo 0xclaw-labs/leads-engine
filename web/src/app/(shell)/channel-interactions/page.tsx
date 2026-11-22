@@ -10,7 +10,7 @@ import {
   rowActions,
   type CapabilityView,
 } from "@/lib/channelInteraction";
-import { RecordFrame, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
+import { RecordFrame, RecordListSkeleton, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { Checkbox, Input } from "@/vendor/painuo/react/v1/src/index";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -295,7 +295,10 @@ export default function ChannelInteractionsPage() {
       </div>
       <div className="card">
         {items === null ? (
-          <SurfaceState kind="loading" title="正在读取互动" detail="授权和回执马上就位。" />
+          <div data-state="loading" data-region="loading">
+            <SurfaceState kind="loading" title="正在读取互动" detail="授权和回执马上就位。" />
+            <RecordListSkeleton rows={3} />
+          </div>
         ) : items.length === 0 ? (
           <SurfaceState kind="empty" title="还没有授权互动" detail="登记授权并接入一条互动后会出现在这里。" />
         ) : (

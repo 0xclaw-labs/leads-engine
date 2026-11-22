@@ -21,6 +21,7 @@ import {
   type FactTone,
   type WorkScope,
 } from "@/lib/productShell";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const ShellWidthContext = createContext(1440);
 
@@ -213,6 +214,45 @@ export function RecordList({
           />
         );
       })}
+    </div>
+  );
+}
+
+// LD-07：列表加载态的逐行/逐块骨架。外层容器承担 role=status + aria-busy 语义，
+// 内层骨架条全部 aria-hidden；骨架行数贴近真实卡片结构（标题 + 若干事实条），
+// 可见的加载文案仍由 SurfaceState 承担，不用纯装饰 div 传达加载。
+export function RecordListSkeleton({ rows = 3, facts = 4 }: { rows?: number; facts?: number }) {
+  return (
+    <div className="record-list" data-skeleton-list="true" role="status" aria-busy="true" aria-label="内容加载中">
+      {Array.from({ length: rows }, (_, rowIndex) => (
+        <article className="record-frame" data-skeleton-row="true" aria-hidden="true" key={rowIndex}>
+          <header className="record-head">
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-5 w-2/5" />
+          </header>
+          <ul data-facts="chips" aria-hidden="true">
+            {Array.from({ length: facts }, (_, factIndex) => (
+              <li key={factIndex}>
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-20" />
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+// LD-07：纯文本记录列表（无卡片结构）的逐行骨架，节奏对齐真实条目行。
+export function LineListSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div data-skeleton-list="true" role="status" aria-busy="true" aria-label="内容加载中">
+      {Array.from({ length: rows }, (_, rowIndex) => (
+        <div className="record-frame" data-skeleton-row="true" aria-hidden="true" key={rowIndex}>
+          <Skeleton className="h-4 w-full" />
+        </div>
+      ))}
     </div>
   );
 }

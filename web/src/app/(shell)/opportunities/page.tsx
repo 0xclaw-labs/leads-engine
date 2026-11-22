@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
+import { RecordList, RecordListSkeleton, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
 import { SegmentedControl } from "@/vendor/painuo/react/v1/src/index";
 import { Button } from "@/components/ui/button";
@@ -191,7 +191,12 @@ export default function OpportunitiesPage() {
         </ul>
       ) : null}
 
-      {items === null && !error ? <SurfaceState kind="loading" title="正在读取商机" detail="阶段和金额马上就位。" /> : null}
+      {items === null && !error ? (
+        <div data-state="loading" data-region="loading">
+          <SurfaceState kind="loading" title="正在读取商机" detail="阶段和金额马上就位。" />
+          <RecordListSkeleton rows={3} />
+        </div>
+      ) : null}
       {items !== null && items.length === 0 ? (
         <SurfaceState kind="empty" title="这个类别还没有商机" detail="看不到别人名下的商机。换一个类别再看。" />
       ) : null}

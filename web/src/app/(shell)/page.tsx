@@ -7,7 +7,7 @@
 import Link from "next/link";
 // 默认导入供 vitest/esbuild 的 classic JSX 转换使用（Next SWC automatic runtime 不受影响）。
 import React, { useEffect, useRef, useState } from "react";
-import { RecordFrame, SurfaceState, ToneBadge, useShellWidth } from "@/components/workbench/chrome";
+import { RecordFrame, RecordListSkeleton, SurfaceState, ToneBadge, useShellWidth } from "@/components/workbench/chrome";
 import { ConversationPanel } from "@/components/workbench/conversationPanel";
 import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
@@ -353,6 +353,7 @@ export default function Home() {
       {scope.tenant && !err && visible === null ? (
         <div data-state="loading" data-region="loading">
           <SurfaceState kind="loading" title="正在整理今天的工作" detail="分组和金额马上就位。" />
+          <RecordListSkeleton rows={3} />
         </div>
       ) : null}
       {scope.tenant && !err && visible && attention.empty ? (

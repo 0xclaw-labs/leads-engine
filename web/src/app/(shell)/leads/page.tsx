@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
+import { RecordList, RecordListSkeleton, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
 import { SegmentedControl } from "@/vendor/painuo/react/v1/src/index";
 import { Button } from "@/components/ui/button";
@@ -196,6 +196,7 @@ export default function LeadsPage() {
       {rows === null && !error ? (
         <div data-state="loading" data-region="loading">
           <SurfaceState kind="loading" title="正在读取线索" detail="姓名、来源和负责人马上就位。" />
+          <RecordListSkeleton rows={3} />
         </div>
       ) : null}
       {rows !== null && rows.length === 0 && !error ? (

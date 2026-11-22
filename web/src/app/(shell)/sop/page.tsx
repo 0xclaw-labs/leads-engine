@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SurfaceState } from "@/components/workbench/chrome";
+import { LineListSkeleton, SurfaceState } from "@/components/workbench/chrome";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
 import { Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { Button } from "@/components/ui/button";
@@ -301,7 +301,12 @@ export default function SOPPage() {
       </div>
       <div className="card">
         <h2>记录</h2>
-        {items === null ? <SurfaceState kind="loading" title="正在读取提醒" detail="草稿和人工确认马上就位。" /> : null}
+        {items === null ? (
+          <div data-state="loading" data-region="loading">
+            <SurfaceState kind="loading" title="正在读取提醒" detail="草稿和人工确认马上就位。" />
+            <LineListSkeleton rows={3} />
+          </div>
+        ) : null}
         {items?.length === 0 ? <SurfaceState kind="empty" title="还没有提醒或草稿" detail="记下内部提醒后会出现在这里。" /> : null}
         <ul>
           {items?.map((item) => (

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { RecordFrame, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
+import { RecordFrame, RecordListSkeleton, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, acceptDeskPayload, factTone, listTenantHeader, pagePrimary, productError, receptionSessionFrame } from "@/lib/productShell";
@@ -146,6 +146,7 @@ export default function ReceptionDeskPage() {
       {scope.tenant && items === null && !error ? (
         <div data-state="loading">
           <SurfaceState kind="loading" title="正在读取接待" detail="进行中的会话马上就位。" />
+          <RecordListSkeleton rows={3} />
         </div>
       ) : null}
       {items && items.length === 0 && !error ? (
