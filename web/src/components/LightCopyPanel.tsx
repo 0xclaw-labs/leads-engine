@@ -1,8 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { failureText } from "@/lib/productShell";
+import { failureText, productError } from "@/lib/productShell";
 import { draftStatus, factLabel, presentLightCopy, type LightCapability } from "@/lib/lightCopy";
 
 interface DraftRow {
@@ -62,34 +73,39 @@ export function LightCopyPanel({
   const load = useCallback(async () => {
     if (!subjectId || !scope.tenant) return;
     const init = scopeInit(scope.tenant);
-    const capRes = await fetch("/api/light-copy/capability", init);
-    // HUI-2626 盲评 P2①：capability 关闭时是 200+enabled:false，面板据此隐藏；
-    // 404 兜底保留（旧服务端契约）。不再让探测打进 console。
-    if (capRes.status === 404) {
-      setHidden(true);
-      return;
-    }
-    const cap = (await capRes.json().catch(() => null)) as LightCapability | null;
-    if (cap && cap.enabled === false) {
-      setHidden(true);
-      return;
-    }
-    setNote(presentLightCopy(cap).note);
-    const listRes = await fetch(base, init);
-    if (listRes.status === 404) {
-      setMessage(subjectKind === "campaign" ? "当前线索不是活动，轻文案只使用商机或碰一碰活动。" : "找不到这条商机。");
+    try {
+      const capRes = await fetch("/api/light-copy/capability", init);
+      // HUI-2626 盲评 P2①：capability 关闭时是 200+enabled:false，面板据此隐藏；
+      // 404 兜底保留（旧服务端契约）。不再让探测打进 console。
+      if (capRes.status === 404) {
+        setHidden(true);
+        return;
+      }
+      const cap = (await capRes.json().catch(() => null)) as LightCapability | null;
+      if (cap && cap.enabled === false) {
+        setHidden(true);
+        return;
+      }
+      setNote(presentLightCopy(cap).note);
+      const listRes = await fetch(base, init);
+      if (listRes.status === 404) {
+        setMessage(subjectKind === "campaign" ? "当前线索不是活动，轻文案只使用商机或碰一碰活动。" : "找不到这条商机。");
+        setDrafts([]);
+        return;
+      }
+      if (!listRes.ok) {
+        const errBody = await listRes.json().catch(() => null);
+        setMessage(errBody?.message ?? "加载失败");
+        return;
+      }
+      const list = await listRes.json();
+      const items = (list.items ?? []) as DraftRow[];
+      setDrafts(items);
+      applyDraft(items.find((item) => item.kind === kind));
+    } catch (e) {
+      setMessage(productError(e instanceof Error ? e.message : "轻文案加载失败"));
       setDrafts([]);
-      return;
     }
-    if (!listRes.ok) {
-      const errBody = await listRes.json();
-      setMessage(errBody.message ?? "加载失败");
-      return;
-    }
-    const list = await listRes.json();
-    const items = (list.items ?? []) as DraftRow[];
-    setDrafts(items);
-    applyDraft(items.find((item) => item.kind === kind));
   }, [applyDraft, base, kind, scope.tenant, subjectId, subjectKind]);
 
   useEffect(() => {
@@ -132,11 +148,13 @@ export function LightCopyPanel({
       <h2>轻文案</h2>
       <p className="muted">{note}</p>
       <p>{statusLabel}</p>
-      <p>
+      <div className="queue-actions">
         {KINDS.map((item) => (
-          <button
+          <Button
             key={item.id}
             type="button"
+            variant="secondary"
+            size="sm"
             disabled={busy}
             onClick={() => {
               setKind(item.id);
@@ -144,16 +162,17 @@ export function LightCopyPanel({
             }}
           >
             {item.label}
-          </button>
+          </Button>
         ))}
-      </p>
-      <label>
-        草稿
-        <textarea value={body} rows={5} cols={60} onChange={(e) => setBody(e.target.value)} />
-      </label>
-      <p>
-        <button
+      </div>
+      <div className="public-form-field">
+        <Label htmlFor="light-copy-body">草稿</Label>
+        <Textarea id="light-copy-body" value={body} rows={5} onChange={(e) => setBody(e.target.value)} />
+      </div>
+      <div className="queue-actions">
+        <Button
           type="button"
+          size="sm"
           disabled={busy || !body.trim()}
           onClick={async () => {
             const saved = await call(`${base}/${kind}`, "PUT", { body });
@@ -165,18 +184,22 @@ export function LightCopyPanel({
           }}
         >
           保存草稿
-        </button>{" "}
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           disabled={busy}
           onClick={async () => {
             await call(`${base}/${kind}/generate`, "POST", { selected });
           }}
         >
           生成
-        </button>{" "}
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           disabled={busy}
           onClick={async () => {
             const confirmed = await call(`${base}/${kind}/confirm`, "POST", {});
@@ -184,17 +207,24 @@ export function LightCopyPanel({
           }}
         >
           确认草稿（不会发送）
-        </button>
-      </p>
-      <p>
-        交给后续工具的事实：
+        </Button>
+      </div>
+      <div className="public-form-field">
+        <span className="muted">交给后续工具的事实：</span>
         {factChoices.map((key) => (
-          <label key={key}>
-            <input type="checkbox" checked={selected.includes(key)} onChange={() => toggleFact(key)} /> {factLabel(key)}
-          </label>
-        ))}{" "}
-        <button
+          <Label key={key} htmlFor={`fact-${key}`} className="flex items-center gap-2 font-normal">
+            <Checkbox
+              id={`fact-${key}`}
+              checked={selected.includes(key)}
+              onCheckedChange={() => toggleFact(key)}
+            />
+            {factLabel(key)}
+          </Label>
+        ))}
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           disabled={busy}
           onClick={async () => {
             const data = await call(`${base}/${kind}/facts`, "POST", { selected });
@@ -203,25 +233,30 @@ export function LightCopyPanel({
           }}
         >
           预览事实
-        </button>
-      </p>
+        </Button>
+      </div>
       {facts ? <p className="muted">事实：{facts}</p> : null}
-      <p>
-        <label>
-          专业工具
-          <select value={tool} onChange={(e) => setTool(e.target.value as (typeof TOOLS)[number]["id"])}>
+      <div className="public-form-field">
+        <Label htmlFor="light-copy-tool">专业工具</Label>
+        <Select value={tool} onValueChange={(v) => setTool(v as (typeof TOOLS)[number]["id"])}>
+          <SelectTrigger id="light-copy-tool" className="w-full sm:w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
             {TOOLS.map((item) => (
-              <option key={item.id} value={item.id}>
+              <SelectItem key={item.id} value={item.id}>
                 {item.label}
-              </option>
+              </SelectItem>
             ))}
-          </select>
-        </label>{" "}
-        <label>
-          <input type="checkbox" checked={decline} onChange={(e) => setDecline(e.target.checked)} /> 不使用专业工具
-        </label>{" "}
-        <button
+          </SelectContent>
+        </Select>
+        <Label htmlFor="light-copy-decline" className="flex items-center gap-2 font-normal">
+          <Checkbox id="light-copy-decline" checked={decline} onCheckedChange={setDecline} />
+          不使用专业工具
+        </Label>
+        <Button
           type="button"
+          size="sm"
           disabled={busy}
           onClick={async () => {
             const data = await call(`${base}/${kind}/handoff`, "POST", {
@@ -240,9 +275,9 @@ export function LightCopyPanel({
           }}
         >
           交接
-        </button>
-      </p>
-      {message ? <p className="muted">{message}</p> : null}
+        </Button>
+      </div>
+      {message ? <p role="alert" className="muted">{message}</p> : null}
     </section>
   );
 }

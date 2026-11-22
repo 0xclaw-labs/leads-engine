@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 import { SurfaceState } from "@/components/workbench/chrome";
-import { Button, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Input } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { WHITE_LABEL_CHAIN_UNVERIFIED, brandIsDisplayOnly, exportConfirmHeader, sourceStaysOnTenant } from "@/lib/crmIsolation";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
-import { MISSING_SCOPE, failureText, pagePrimary } from "@/lib/productShell";
+import { MISSING_SCOPE, failureText, pagePrimary, productError } from "@/lib/productShell";
 
 // 本租户导出与隔离说明。品牌只展示来源。下载在已有会话上再带确认头，
 // 由服务端重新鉴权。真实 Touch 留资链不在这个页面里宣称完成。
@@ -25,38 +27,46 @@ export default function IsolationPage() {
       setMessage(MISSING_SCOPE);
       return;
     }
-    const res = await fetch("/api/crm/exports", scopeInit(scope.tenant, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ purpose: "offboarding", brand_id: brand.trim() }),
-    }));
-    const body = await res.json();
-    if (!res.ok) {
-      setMessage(failureText(body, res.status));
-      setJobId("");
-      return;
+    try {
+      const res = await fetch("/api/crm/exports", scopeInit(scope.tenant, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ purpose: "offboarding", brand_id: brand.trim() }),
+      }));
+      const body = await res.json();
+      if (!res.ok) {
+        setMessage(failureText(body, res.status));
+        setJobId("");
+        return;
+      }
+      setJobId(typeof body.id === "string" ? body.id : "");
+      setMessage("已建立本租户导出任务。下载会再次鉴权，且不含渠道采购价、其他租户或内部令牌。");
+    } catch (e) {
+      setMessage(productError((e as Error).message));
     }
-    setJobId(typeof body.id === "string" ? body.id : "");
-    setMessage("已建立本租户导出任务。下载会再次鉴权，且不含渠道采购价、其他租户或内部令牌。");
   };
 
   const download = async () => {
     if (!jobId || !scope.tenant) return;
-    const res = await fetch(`/api/crm/exports/${jobId}/download`, scopeInit(scope.tenant, {
-      headers: exportConfirmHeader(),
-    }));
-    if (!res.ok) {
-      setMessage("下载未通过再次鉴权。");
-      return;
+    try {
+      const res = await fetch(`/api/crm/exports/${jobId}/download`, scopeInit(scope.tenant, {
+        headers: exportConfirmHeader(),
+      }));
+      if (!res.ok) {
+        setMessage("下载未通过再次鉴权。");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `crm-export-${jobId}.txt`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage("已下载本租户导出。");
+    } catch (e) {
+      setMessage(productError((e as Error).message));
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `crm-export-${jobId}.txt`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setMessage("已下载本租户导出。");
   };
 
   return (
@@ -79,10 +89,14 @@ export default function IsolationPage() {
       <section className="card">
         <h2>本租户导出</h2>
         <p className="muted">租户负责人可导出联系人、线索、商机、跟进、分配、来源、同意和撤回状态。</p>
-        <Button variant="primary" size="sm" type="button" data-page-primary="true" onClick={createJob}>{pagePrimary("isolation")}</Button>{" "}
+        <Button size="sm" type="button" data-page-primary="true" onClick={createJob}>{pagePrimary("isolation")}</Button>{" "}
         <Button variant="secondary" size="sm" type="button" onClick={download} disabled={!jobId}>确认并下载</Button>
         {jobId ? <p data-testid="export-job">导出任务已建立</p> : null}
-        {message ? <p data-testid="export-message">{message}</p> : null}
+        {message ? (
+          <Alert role={message.startsWith("已") ? "status" : "alert"} data-testid="export-message">
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
+        ) : null}
       </section>
       <p className="muted" data-testid="pause-quota">
         租户暂停和品牌暂停分开。恢复不会自动恢复已撤销的成员、营销同意或旧授权。额度不足只停止新增收费 AI，不隐藏已有联系人和跟进。

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { RecordList, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
-import { Button, SegmentedControl } from "@/vendor/painuo/react/v1/src/index";
+import { SegmentedControl } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { leadRowFacts } from "@/lib/finish";
 import { deskState, sourceText, type StatusFacts } from "@/lib/workbench";
@@ -170,9 +171,11 @@ export default function LeadsPage() {
     <main data-page="leads" data-pattern="list">
       <header className="page-head" data-region="header">
         <h1>线索</h1>
-        <Link className="btn primary" data-page-primary="true" data-region="primary_action" href={firstFollowable ? `/leads/${firstFollowable.id}` : "/"}>
-          {pagePrimary("leads")}
-        </Link>
+        <Button size="sm" data-page-primary="true" data-region="primary_action" asChild>
+          <Link href={firstFollowable ? `/leads/${firstFollowable.id}` : "/"}>
+            {pagePrimary("leads")}
+          </Link>
+        </Button>
       </header>
       <p className="muted">来源、负责人和待分配原因以记录为准。这里不创建线索，也不发起触达。</p>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
@@ -240,7 +243,7 @@ export default function LeadsPage() {
         title={drawerTitle}
         busy={drawerBusy}
         width={width}
-        footer={drawerId ? <Link className="btn" href={`/leads/${drawerId}`}>打开完整线索</Link> : null}
+        footer={drawerId ? <Button variant="outline" size="sm" asChild><Link href={`/leads/${drawerId}`}>打开完整线索</Link></Button> : null}
       >
         {drawerErr ? <SurfaceState kind="error" title="线索没有打开" detail={drawerErr} /> : null}
         {!drawerErr && !drawerBody && drawerBusy ? (

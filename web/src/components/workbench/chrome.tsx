@@ -5,6 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button as PainuoButton } from "@/vendor/painuo/react/v1/src/index";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   SHELL_NAV,
   chooseScope,
   isNavActive,
@@ -241,21 +248,24 @@ export function WorkbenchChrome({
       <div className="desk-context" id="work-context" data-work-context="tenant" role="region" aria-label="工作范围">
         <span>工作范围</span>
         <strong>{active?.display_name ?? scopeEmptyLabel}</strong>
-        <select
-          aria-label="切换工作范围"
+        <Select
           value={active?.tenant_id ?? ""}
-          onChange={(event) => {
-            const chosen = chooseScope(scopes, event.target.value);
+          onValueChange={(value) => {
+            const chosen = chooseScope(scopes, value);
             if (chosen) onSwitch(chosen.tenant_id);
           }}
         >
-          {active ? null : <option value="">{scopeEmptyLabel}</option>}
-          {scopes.map((scope) => (
-            <option key={scope.tenant_id} value={scope.tenant_id}>
-              {scope.display_name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger aria-label="切换工作范围" className="w-auto">
+            <SelectValue placeholder={scopeEmptyLabel} />
+          </SelectTrigger>
+          <SelectContent>
+            {scopes.map((scope) => (
+              <SelectItem key={scope.tenant_id} value={scope.tenant_id}>
+                {scope.display_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <nav className="desk-nav" aria-label="销售工作台" data-shell-nav={structure.navigation}>
         {/* P0：当前页导航项高亮。aria-current="page" 是无障碍真源，样式跟随选择器。 */}

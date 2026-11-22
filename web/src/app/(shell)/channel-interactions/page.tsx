@@ -11,7 +11,16 @@ import {
   type CapabilityView,
 } from "@/lib/channelInteraction";
 import { RecordFrame, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
-import { Button, Checkbox, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Checkbox, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, productError } from "@/lib/productShell";
 
@@ -121,78 +130,92 @@ export default function ChannelInteractionsPage() {
 
   const saveGrant = async () => {
     setError("");
-    const res = await fetch("/api/channel-grants", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
-        provider,
-        account_id: accountId,
-        app_id: appId,
-        subject_ns: `${provider}.subject`,
-        message_ns: `${provider}.message`,
-        post_ns: `${provider}.post`,
-        capabilities,
-      }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      setError(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch("/api/channel-grants", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          provider,
+          account_id: accountId,
+          app_id: appId,
+          subject_ns: `${provider}.subject`,
+          message_ns: `${provider}.message`,
+          post_ns: `${provider}.post`,
+          capabilities,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(failureText(body, res.status));
+        return;
+      }
+      await load(tenant);
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    await load(tenant);
   };
 
   const saveEvent = async () => {
     setError("");
-    const res = await fetch("/api/channel-interactions", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
-        target_tenant_id: tenant,
-        provider,
-        account_id: accountId,
-        app_id: appId,
-        subject_ns: `${provider}.subject`,
-        message_ns: `${provider}.message`,
-        post_ns: `${provider}.post`,
-        event_id: eventId,
-        kind,
-        subject_id: subjectId,
-        nickname,
-        text,
-        explicit_intent: intent,
-        purpose,
-      }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      setError(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch("/api/channel-interactions", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          target_tenant_id: tenant,
+          provider,
+          account_id: accountId,
+          app_id: appId,
+          subject_ns: `${provider}.subject`,
+          message_ns: `${provider}.message`,
+          post_ns: `${provider}.post`,
+          event_id: eventId,
+          kind,
+          subject_id: subjectId,
+          nickname,
+          text,
+          explicit_intent: intent,
+          purpose,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(failureText(body, res.status));
+        return;
+      }
+      setText("");
+      await load(tenant);
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    setText("");
-    await load(tenant);
   };
 
   const confirm = async (candidateId: string) => {
     setError("");
-    const res = await fetch(`/api/channel-candidates/${candidateId}/confirm`, {
-      method: "POST",
-      headers: headers(),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      setError(failureText(body, res.status));
-      return;
+    try {
+      const res = await fetch(`/api/channel-candidates/${candidateId}/confirm`, {
+        method: "POST",
+        headers: headers(),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(failureText(body, res.status));
+        return;
+      }
+      setLeadId(typeof body.lead_id === "string" ? body.lead_id : "");
+      await load(tenant);
+    } catch (e) {
+      setError(productError((e as Error).message));
     }
-    setLeadId(typeof body.lead_id === "string" ? body.lead_id : "");
-    await load(tenant);
   };
 
   return (
     <main data-page="channel">
       <header className="page-head">
         <h1>授权互动</h1>
-        <Link className="btn" href="/">返回工作台</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/">返回工作台</Link>
+        </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <div className="card">
@@ -227,42 +250,46 @@ export default function ChannelInteractionsPage() {
       </div>
       <div className="card">
         <h2>记录一条互动</h2>
-        <p>
-          <label>
-            类型{" "}
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="comment">评论</option>
-              <option value="direct_message">私信</option>
-            </select>
-          </label>{" "}
-          <label>
-            <Input label="事件 ID" value={eventId} onChange={(e) => setEventId(e.target.value)} />
-          </label>{" "}
-          <label>
-            <Input label="对方 ID" value={subjectId} onChange={(e) => setSubjectId(e.target.value)} />
-          </label>
-        </p>
-        <p>
-          <label>
-            <Input label="昵称" value={nickname} onChange={(e) => setNickname(e.target.value)} />
-          </label>{" "}
-          <label>
-            用途{" "}
-            <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-              <option value="general_qa">一般问答</option>
-              <option value="support">支持</option>
-              <option value="aftersales">售后</option>
-              <option value="sales_inquiry">购买意向</option>
-            </select>
-          </label>{" "}
+        <div className="queue-actions">
+          <div className="public-form-field">
+            <Label htmlFor="interaction-kind">类型</Label>
+            <Select value={kind} onValueChange={setKind}>
+              <SelectTrigger id="interaction-kind" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="comment">评论</SelectItem>
+                <SelectItem value="direct_message">私信</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Input label="事件 ID" value={eventId} onChange={(e) => setEventId(e.target.value)} />
+          <Input label="对方 ID" value={subjectId} onChange={(e) => setSubjectId(e.target.value)} />
+        </div>
+        <div className="queue-actions">
+          <Input label="昵称" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+          <div className="public-form-field">
+            <Label htmlFor="interaction-purpose">用途</Label>
+            <Select value={purpose} onValueChange={setPurpose}>
+              <SelectTrigger id="interaction-purpose" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general_qa">一般问答</SelectItem>
+                <SelectItem value="support">支持</SelectItem>
+                <SelectItem value="aftersales">售后</SelectItem>
+                <SelectItem value="sales_inquiry">购买意向</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Checkbox label="明确意向" checked={intent} onCheckedChange={(checked) => setIntent(checked)} />
-        </p>
+        </div>
         <p>
           <label>
             <Input label="正文" value={text} onChange={(e) => setText(e.target.value)} />
           </label>
         </p>
-        <Button variant="primary" size="sm" type="button" data-page-primary="true" onClick={saveEvent}>
+        <Button type="button" data-page-primary="true" onClick={saveEvent}>
           接入
         </Button>
       </div>

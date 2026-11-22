@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 import { RendererProvider, Status } from "@/vendor/painuo/react/v1/src/index";
 import { SurfaceState, useShellWidth } from "@/components/workbench/chrome";
-import { Button } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError, rendererDensity } from "@/lib/productShell";
 import { roiStatusToState } from "@/lib/painuoStatus";
@@ -45,18 +47,23 @@ export default function AttributionPage() {
       return;
     }
     setErr("");
-    const res = await fetch("/api/roi/recalculate", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...listTenantHeader(tenant) },
-      body: JSON.stringify(body),
-    });
-    const data = (await res.json().catch(() => ({}))) as RoiReport & { message?: string; error?: string };
-    if (!res.ok) {
+    try {
+      const res = await fetch("/api/roi/recalculate", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...listTenantHeader(tenant) },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as RoiReport & { message?: string; error?: string };
+      if (!res.ok) {
+        setReport(null);
+        setErr(failureText(data, res.status));
+        return;
+      }
+      setReport(data);
+    } catch (e) {
       setReport(null);
-      setErr(failureText(data, res.status));
-      return;
+      setErr(productError((e as Error).message));
     }
-    setReport(data);
   }
 
   return (
@@ -66,38 +73,43 @@ export default function AttributionPage() {
     <main data-page="attribution">
       <header className="page-head">
         <h1>来源与费用复算</h1>
-        <Link className="btn" href="/">返回工作台</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/">返回工作台</Link>
+        </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <div className="card">
-        <p>{view.disclaimer}</p>
-        <p className="muted">{view.funnelReuse}</p>
-        <p className="muted">
-          当前状态：{STATUS_LABELS[view.roiStatus] ?? view.roiStatus}。这不是营销提升证明。
-          {/* HUI-2622：painuo renderer Status 徽章，加法式追加；STATUS_LABELS 文字原样保留，颜色不单独立义 */}
-          <Status
-            state={roiStatusToState(view.roiStatus)}
-            label={(STATUS_LABELS[view.roiStatus] ?? view.roiStatus).trim() || "未知"}
-          />
-        </p>
-      </div>
-      <div className="card">
-        <p>
-          <label>
-            来源、事件与费用引用
+      <Card>
+        <CardContent className="space-y-2">
+          <p>{view.disclaimer}</p>
+          <p className="muted">{view.funnelReuse}</p>
+          <p className="muted">
+            当前状态：{STATUS_LABELS[view.roiStatus] ?? view.roiStatus}。这不是营销提升证明。
+            {/* HUI-2622：painuo renderer Status 徽章，加法式追加；STATUS_LABELS 文字原样保留，颜色不单独立义 */}
+            <Status
+              state={roiStatusToState(view.roiStatus)}
+              label={(STATUS_LABELS[view.roiStatus] ?? view.roiStatus).trim() || "未知"}
+            />
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="space-y-3">
+          <div className="public-form-field">
+            <Label htmlFor="roi-citation">来源、事件与费用引用</Label>
             <textarea
+              id="roi-citation"
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
               rows={8}
               placeholder="写下来源、事件、费用和收入引用"
             />
-          </label>
-        </p>
-        <Button variant="primary" size="sm" type="button" data-page-primary="true" disabled={!tenant} onClick={() => void recalculate()}>
-          {pagePrimary("attribution")}
-        </Button>
-        {err ? <SurfaceState kind="error" title="没有复算出来" detail={productError(err)} /> : null}
-      </div>
+          </div>
+          <Button type="button" data-page-primary="true" disabled={!tenant} onClick={() => void recalculate()}>
+            {pagePrimary("attribution")}
+          </Button>
+          {err ? <SurfaceState kind="error" title="没有复算出来" detail={productError(err)} /> : null}
+        </CardContent>
+      </Card>
       <div className="card">
         <h2>收入分开看</h2>
         <ul>

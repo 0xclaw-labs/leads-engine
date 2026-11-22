@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SurfaceState } from "@/components/workbench/chrome";
 import { RendererSelect } from "@/components/workbench/rendererSelect";
-import { Button, Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
+import { Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
+import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, domainFailureText, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 import { presentSOP, recordLabel, type SOPCapability } from "@/lib/sopReach";
@@ -50,6 +51,7 @@ export default function SOPPage() {
   const [contacts, setContacts] = useState<ScopeContact[] | null>(null);
   const [contactId, setContactId] = useState("");
   const [consents, setConsents] = useState<ScopeConsent[] | null>(null);
+  const [consentError, setConsentError] = useState("");
   const [consentId, setConsentId] = useState("");
   const [channel, setChannel] = useState("sms");
   const [recipient, setRecipient] = useState("");
@@ -116,6 +118,7 @@ export default function SOPPage() {
     setContactId("");
     setConsentId("");
     setConsents(null);
+    setConsentError("");
     setContacts(null);
     setDraftId("");
     setBusy(false);
@@ -126,6 +129,7 @@ export default function SOPPage() {
     const seq = ++consentSeq.current;
     setConsentId("");
     setConsents(null);
+    setConsentError("");
     if (!tenant.trim() || !id) {
       setPurpose("follow_up");
       return;
@@ -136,11 +140,18 @@ export default function SOPPage() {
       });
       const body = await res.json().catch(() => null);
       if (consentSeq.current !== seq) return;
-      const choices = res.ok ? consentChoices(body?.items) : [];
+      if (!res.ok) {
+        setConsentError(domainFailureText(res.status, body));
+        setConsents([]);
+        setPurpose("follow_up");
+        return;
+      }
+      const choices = consentChoices(body?.items);
       setConsents(choices);
       if (choices.length === 0) setPurpose("follow_up");
-    } catch {
+    } catch (e) {
       if (consentSeq.current !== seq) return;
+      setConsentError(productError(e instanceof Error ? e.message : "授权读取失败"));
       setConsents([]);
       setPurpose("follow_up");
     }
@@ -186,7 +197,9 @@ export default function SOPPage() {
     <main data-page="sop">
       <header className="page-head">
         <h1>下一次跟进</h1>
-        <Link className="btn" href="/">我的工作</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/">我的工作</Link>
+        </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
       <div className="card">
@@ -223,7 +236,8 @@ export default function SOPPage() {
             ...(consents ?? []).map((item) => ({ value: item.id, label: consentLabel(item) })),
           ]}
         />
-        {selected && consents && consents.length === 0 ? <p className="muted">还没有可选择的授权</p> : null}
+        {selected && consents && consents.length === 0 && !consentError ? <p className="muted">还没有可选择的授权</p> : null}
+        {consentError ? <p role="alert" className="error">{consentError}</p> : null}
         <RendererSelect label="渠道" value={channel} onValueChange={setChannel} choices={CHANNEL_CHOICES} />
         <RendererSelect
           label="用途"
@@ -244,7 +258,7 @@ export default function SOPPage() {
         {payload ? (
           <>
             <Button
-              variant="primary" size="sm"
+              size="sm"
               type="button"
               data-page-primary="true"
               disabled={busy}
