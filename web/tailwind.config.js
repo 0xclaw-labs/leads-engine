@@ -35,7 +35,10 @@ module.exports = {
     				DEFAULT: 'var(--ui-accent)',
     				foreground: 'var(--ui-accent-foreground)'
     			},
-    			destructive: 'var(--ui-destructive)',
+    			destructive: {
+				DEFAULT: 'var(--ui-destructive)',
+				foreground: 'var(--ui-destructive-foreground)'
+			},
     			border: 'var(--ui-border)',
     			input: 'var(--ui-input)',
     			ring: 'var(--ui-ring)',

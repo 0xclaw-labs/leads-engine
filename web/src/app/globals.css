@@ -916,6 +916,7 @@ textarea {
     --ui-accent: oklch(0.967 0.001 286.375);
     --ui-accent-foreground: oklch(0.21 0.006 285.885);
     --ui-destructive: oklch(0.577 0.245 27.325);
+    --ui-destructive-foreground: oklch(0.985 0 0);
     --ui-border: oklch(0.92 0.004 286.32);
     --ui-input: oklch(0.92 0.004 286.32);
     --ui-ring: var(--pn-border-focus);
@@ -950,6 +951,7 @@ textarea {
     --ui-accent: oklch(0.274 0.006 286.033);
     --ui-accent-foreground: oklch(0.985 0 0);
     --ui-destructive: oklch(0.704 0.191 22.216);
+    --ui-destructive-foreground: oklch(0.141 0.005 285.823);
     --ui-border: oklch(1 0 0 / 10%);
     --ui-input: oklch(1 0 0 / 15%);
     --ui-ring: oklch(0.552 0.016 285.938);
