@@ -232,7 +232,7 @@ export default function ContactsPage() {
         档案、联系方式、来源、标签和授权都留在当前商家。联系人手机号不会自动注册平台账号。搜索只按姓名或标签，不按手机号。
       </p>
 
-      <div className="card" data-list-filter="contacts">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4" data-list-filter="contacts">
         <h2>搜索</h2>
         <Input label="按姓名搜索" value={name} onChange={(e) => setName(e.target.value)} />
         <Input label="按标签搜索(如 vip)" value={tag} onChange={(e) => setTag(e.target.value)} />
@@ -248,7 +248,7 @@ export default function ContactsPage() {
 
       {error ? <SurfaceState kind="error" title="这一步没有完成" detail={error} /> : null}
 
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>新建档案</h2>
         <p className="muted">表单或活动来源需要留下活动名称，否则建不成档案。保存失败时这里会保留你填的内容。</p>
         <div className="stack-form">

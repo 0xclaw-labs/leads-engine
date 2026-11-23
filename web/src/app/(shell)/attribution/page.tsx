@@ -110,7 +110,7 @@ export default function AttributionPage() {
           {err ? <SurfaceState kind="error" title="没有复算出来" detail={productError(err)} /> : null}
         </CardContent>
       </Card>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>收入分开看</h2>
         <ul>
           {view.revenueLines.map((line) => (
@@ -123,7 +123,7 @@ export default function AttributionPage() {
         </ul>
       </div>
       {view.metricLines.length > 0 ? (
-        <div className="card">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
           <h2>原口径指标</h2>
           <ul>
             {view.metricLines.map((line) => (
@@ -136,7 +136,7 @@ export default function AttributionPage() {
         </div>
       ) : null}
       {view.stageLines.length > 0 ? (
-        <div className="card">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
           <h2>过程分开计</h2>
           <ul>
             {view.stageLines.map((line) => (
@@ -148,7 +148,7 @@ export default function AttributionPage() {
         </div>
       ) : null}
       {report?.source_chain && report.source_chain.length > 0 ? (
-        <div className="card">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
           <h2>受限来源链</h2>
           <ul>
             {report.source_chain.map((node) => (

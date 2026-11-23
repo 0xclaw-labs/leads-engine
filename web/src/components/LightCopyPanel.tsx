@@ -144,7 +144,7 @@ export function LightCopyPanel({
   const factChoices = subjectKind === "campaign" ? ["activity_ref"] : ["title", "price_cents"];
 
   return (
-    <section className="card">
+    <section className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
       <h2>轻文案</h2>
       <p className="muted">{note}</p>
       <p>{statusLabel}</p>

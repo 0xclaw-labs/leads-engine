@@ -204,7 +204,7 @@ export function IntentOnOpportunity({
         const view = snap?.grade ? presentAssessment(asInput(snap)) : null;
         const buttons = outreachButtons(snap?.permissions);
         return (
-          <div key={lead.id} className="card">
+          <div key={lead.id} className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
             <p>线索 {lead.id}</p>
             {view ? (
               <>

@@ -77,7 +77,7 @@ export default function IsolationPage() {
       </p>
       <p data-testid="tenant-scope">当前工作范围：{scope.tenant ? "已选择" : "未选择"}</p>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <section className="card">
+      <section className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>品牌来源</h2>
         <Input label="品牌显示名" value={brand} onChange={(e) => setBrand(e.target.value)} />
         <Input label="来源标签" value={sourceTag} onChange={(e) => setSourceTag(e.target.value)} />
@@ -86,7 +86,7 @@ export default function IsolationPage() {
         <p data-testid="source-stays">{sourceStaysOnTenant(sourceTag, brand, campaignId)}</p>
         <p className="muted">改品牌名称不会改已有联系人的租户、同意来源和商机历史。</p>
       </section>
-      <section className="card">
+      <section className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>本租户导出</h2>
         <p className="muted">租户负责人可导出联系人、线索、商机、跟进、分配、来源、同意和撤回状态。</p>
         <Button size="sm" type="button" data-page-primary="true" onClick={createJob}>{pagePrimary("isolation")}</Button>{" "}

@@ -76,7 +76,7 @@ const SCREEN_EXAMPLE: GradeInput = {
 function ExampleCard() {
   const view = presentAssessment(SCREEN_EXAMPLE);
   return (
-    <div className="card">
+    <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
       <h2>界面样例 · {view.label}</h2>
       <p className="muted">这是标注样本的展示方式，不是某位客户的成交预测。</p>
       <p>{view.reason}</p>
@@ -247,7 +247,7 @@ export default function IntentGradePage() {
         </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <p data-tone="ai">规则评分，不是真人成交预测，也不是校准后的成交概率。下一步只给建议，不自动外呼、短信、拉群或创建订单。</p>
         <p data-tone="ai">{modelStatusText()}</p>
         <div className="queue-actions">
@@ -277,7 +277,7 @@ export default function IntentGradePage() {
       <ExampleCard />
       {error ? <SurfaceState kind="error" title="评估没有完成" detail={productError(error)} /> : null}
       {shown ? (
-        <div className="card">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
           <h2>
             {shown.label}
             {shown.humanLocked ? " · 人工已确认" : ""}
@@ -349,7 +349,7 @@ export default function IntentGradePage() {
           </form>
         </div>
       ) : null}
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>标注样本</h2>
         <Button variant="secondary" type="button" size="sm" onClick={() => void loadReport()}>
           查看样本报告

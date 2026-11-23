@@ -213,7 +213,7 @@ export default function ContactDetailPage() {
         档案级授权:{contact.consent_status}
       </p>
 
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>基本信息与联系方式</h2>
         <ul>
           <li>姓名:{contact.name || "未填写称呼"}</li>
@@ -227,7 +227,7 @@ export default function ContactDetailPage() {
       </div>
 
       {allowed ? (
-        <div className="card">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
           <h2>编辑档案</h2>
           <div>
             <Input label="姓名" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
@@ -253,7 +253,7 @@ export default function ContactDetailPage() {
         <p className="muted">无编辑权限(仅档案负责人或租户 owner 可修改)。</p>
       )}
 
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>授权(consent)来源明细</h2>
         {summary ? <p className="muted">{marketingSummaryLine(summary)}</p> : null}
         {consents.length === 0 ? <p className="muted">暂无来源授权记录。</p> : null}
@@ -280,7 +280,7 @@ export default function ContactDetailPage() {
         ) : null}
       </div>
 
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>跟进时间线</h2>
         <ol>
           {followups.map((f) => (
@@ -313,7 +313,7 @@ export default function ContactDetailPage() {
       </div>
 
       {isOwner ? (
-        <div className="card">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
           <h2>删除档案(owner)</h2>
           <p className="muted">
             软删除:档案脱敏占位并对所有角色不可见;授权与跟进记录依法保留最小审计。

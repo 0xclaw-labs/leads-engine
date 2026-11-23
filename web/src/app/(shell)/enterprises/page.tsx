@@ -239,7 +239,7 @@ export default function EnterprisesPage() {
         </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <div className="card" id="capability">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4" id="capability">
         <h2>数据源</h2>
         {capability ? (
           <p data-tone="automation">
@@ -251,7 +251,7 @@ export default function EnterprisesPage() {
         )}
       </div>
 
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>导入客户有权再利用的企业资料</h2>
         <p className="muted">企业行业、地区、规模和自然人联系方式分开填写。电话不代表可以营销。</p>
         <p>
@@ -292,7 +292,7 @@ export default function EnterprisesPage() {
         </Button>
       </div>
 
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>按企业筛选</h2>
         <Input id="filter-industry" label="行业" value={filterIndustry} onChange={(e) => setFilterIndustry(e.target.value)} />{" "}
         <Input id="filter-region" label="地区" value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} />{" "}
@@ -321,7 +321,7 @@ export default function EnterprisesPage() {
       </div>
 
       {preview ? (
-        <div className="card" id="preview">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4" id="preview">
           <h2>导入前预览</h2>
           <p>这一步不会进入候选池。允许用途：{(preview.allowed_uses ?? []).join("、") || "无"}。营销同意：否。外呼：{preview.outbound}。</p>
           <p>

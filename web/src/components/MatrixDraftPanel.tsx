@@ -138,7 +138,7 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <section className="card stack-form">
+    <section className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4 stack-form">
       <h2>获客内容送矩阵</h2>
       <p data-testid="matrix-draft-notice">{MATRIX_DRAFT_NOTICE}</p>
       <div className="public-form-field">

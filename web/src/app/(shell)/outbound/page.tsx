@@ -175,14 +175,14 @@ export default function OutboundPage() {
         </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <p data-testid="outbound-note" data-tone="automation">{view.note}</p>
         <p className="muted">
           <span data-tone="automation">自动化状态</span> 生产自动外呼：{view.productionAuto ? "开启" : "关闭"}。真实线路：{view.realLine ? "已接入" : "没有"}。
           费用：{view.cost === "unknown" ? "未知" : view.cost}。本次记录：{view.simulation ? "模拟" : "未标明"}。
         </p>
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>隔离演练</h2>
         <p className="muted">只写入模拟任务，不会自动发送，也不会扣费。公开号码和高分都不会变成拨打成功。拒绝之后换活动也不能再打。</p>
         <div className="public-form-field">
@@ -271,7 +271,7 @@ export default function OutboundPage() {
         ) : null}
         {error ? <SurfaceState kind="error" title="外呼没有记下" detail={error} /> : null}
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>回执</h2>
         <p className="muted" data-testid="outbound-result">
           {/* HUI-2626 fix2（gate-r2 #7）：部分成功/部分失败是一态，由 lib 同一 composer 出词。 */}

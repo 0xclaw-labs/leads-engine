@@ -202,14 +202,14 @@ export default function SOPPage() {
         </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <p data-tone="automation">{view.note}</p>
         <p className="muted">
           <span data-tone="automation">自动化状态</span> 渠道状态：{view.verified ? "已接通" : "未验证"}。无人值守：{view.unattended ? "已明确开启" : "关闭"}。
           这里只做内部提醒、回复草稿和人工确认，不会自动发短信、邮件或企微，也不会扣费。
         </p>
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>提醒和草稿</h2>
         {/* ⑧ 原生 select/textarea 换 vendored renderer 控件：交互语义与选项不变，
             ≤430 触控密度（rendererDensity）继续生效。 */}
@@ -284,7 +284,7 @@ export default function SOPPage() {
         )}
         {error ? <SurfaceState kind="error" title="跟进没有记下" detail={error} /> : null}
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>人工确认</h2>
         <p className="muted">确认后停在待发送或未送达。没有渠道回执时不会写成已送达。</p>
         <p className="muted">{draftId ? "已选用一条草稿，可以人工确认。" : "先保存草稿，或在下面的记录里选用。"}</p>
@@ -299,7 +299,7 @@ export default function SOPPage() {
           </Button>
         ) : null}
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>记录</h2>
         {items === null ? (
           <div data-state="loading" data-region="loading">

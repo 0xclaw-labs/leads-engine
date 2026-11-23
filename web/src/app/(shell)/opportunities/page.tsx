@@ -167,7 +167,7 @@ export default function OpportunitiesPage() {
         「人工标记成交」仅为销售判断,并非收款事实;金额缺失时显示「未知」。
       </p>
 
-      <div className="card" data-list-filter="opportunities">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4" data-list-filter="opportunities">
         <SegmentedControl
           label="商机类别（分域隔离，不做跨类别合计）"
           items={CATEGORY_CHOICES}

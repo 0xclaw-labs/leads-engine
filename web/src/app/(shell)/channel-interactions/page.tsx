@@ -218,7 +218,7 @@ export default function ChannelInteractionsPage() {
         </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <p>
           <strong>{view.label}</strong>。{view.note}
         </p>
@@ -230,7 +230,7 @@ export default function ChannelInteractionsPage() {
           已确认到本租户线索。<Link href={leadHref(leadId)}>打开线索</Link>
         </p>
       ) : null}
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>连接器适配</h2>
         <p className="muted">这只是未验证的适配登记，不会连接真实平台。</p>
         <p>
@@ -248,7 +248,7 @@ export default function ChannelInteractionsPage() {
           登记授权
         </Button>
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>记录一条互动</h2>
         <div className="queue-actions">
           <div className="public-form-field">
@@ -293,7 +293,7 @@ export default function ChannelInteractionsPage() {
           接入
         </Button>
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         {items === null ? (
           <div data-state="loading" data-region="loading">
             <SurfaceState kind="loading" title="正在读取互动" detail="授权和回执马上就位。" />

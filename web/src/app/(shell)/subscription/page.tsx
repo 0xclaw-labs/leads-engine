@@ -81,11 +81,11 @@ export default function SubscriptionPage() {
         </Button>
       </p>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <p data-tone="automation">钱包余额不代表 CRM 套餐已开通。商家成交额不进入平台钱包。这里不会扣款、外呼或发消息。</p>
         {err ? <SurfaceState kind="error" title="用量没有载入" detail={err} /> : null}
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>三本账分开</h2>
         <ul>
           {view.lines.map((line) => (
@@ -101,7 +101,7 @@ export default function SubscriptionPage() {
           {view.advancedLimited ? "。高级功能已停用。" : ""}
         </p>
       </div>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>余额不足</h2>
         <p>
           充值只走统一入口{" "}

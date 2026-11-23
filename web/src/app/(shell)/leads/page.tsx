@@ -206,7 +206,7 @@ export default function LeadsPage() {
       ) : null}
       {rows !== null && rows.length > 0 ? (
         <>
-          <div className="card" data-list-filter="leads" data-region="status">
+          <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4" data-list-filter="leads" data-region="status">
             <SegmentedControl
               label="状态筛选（当前范围全部线索）"
               items={STATUS_FILTERS}

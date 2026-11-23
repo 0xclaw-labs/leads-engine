@@ -149,7 +149,7 @@ function Landing() {
           感谢您的留言,我们会尽快与您联系。
           {done.duplicate ? "(检测到重复提交,已保留您此前的一次提交)" : ""}
         </p>
-        <div className="card">
+        <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
           <h2>关于您的授权</h2>
           <ul>
             <li>告知版本:{done.notice_version || desc.notice_version}</li>
@@ -170,7 +170,7 @@ function Landing() {
       <p className="muted">
         用途:{desc.purpose || "处理您的咨询"} · 告知版本:{desc.notice_version}
       </p>
-      <div className="card">
+      <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         {fields.map((f) => (
           <div key={f.name} style={{ marginBottom: 12 }}>
             <label htmlFor={`f-${f.name}`}>{FIELD_LABELS[f.name] ?? "其他信息"}</label>

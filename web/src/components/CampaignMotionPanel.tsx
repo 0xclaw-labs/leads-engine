@@ -196,7 +196,7 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <section className="card stack-form">
+    <section className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4 stack-form">
       <h2>活动动效交出</h2>
       <p data-testid="campaign-motion-notice">{view.notice}</p>
       {recorded ? <p data-testid="campaign-motion-status">{view.status}</p> : null}

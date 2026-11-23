@@ -238,7 +238,7 @@ export default function LeadDeskPage() {
             <p data-joint-chain="incomplete">{jointChainLine(visible.joint_chain)}</p>
           </RecordFrame>
           {assignOpen && members && members.length > 0 ? (
-            <div className="card stack-form" data-assign-owner="true">
+            <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4 stack-form" data-assign-owner="true">
               <h2>分配负责人</h2>
               <p className="muted">这条线索还没有负责人。分配后才能记跟进、安排下一步。</p>
               <RendererSelect
@@ -260,7 +260,7 @@ export default function LeadDeskPage() {
               {assignMsg}
             </p>
           ) : null}
-          <div className="card">
+          <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
             <h2>时间线</h2>
             {(visible.events ?? []).length === 0 ? (
               <div data-state="empty" data-region="empty">
@@ -282,7 +282,7 @@ export default function LeadDeskPage() {
           {id && visible?.source?.activity ? <LightCopyPanel subjectKind="campaign" subjectId={id} /> : null}
           {id ? <CampaignMotionPanel campaignId={id} /> : null}
           {id ? <MatrixDraftPanel campaignId={id} /> : null}
-          <div className="card stack-form">
+          <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4 stack-form">
             {/* HUI-2626 fix2：提交语义收敛到显式按钮（主行动至多一个），控件走 vendored/标准件。 */}
             <h2>跟进</h2>
             <Textarea
