@@ -14,7 +14,7 @@ export function sourceStaysOnTenant(sourceTag: string, brand: string, campaignId
 
 // The real Touch → Notify → Leads chain has not been verified.
 export const WHITE_LABEL_CHAIN_UNVERIFIED =
-  "Touch 到真实 Notify 再到 Leads 仍未验证。夹具接收器不是这条链的证据。";
+  "Touch → Notify → Leads 链路尚未完成验证；演示接收器不能作为该链路的证据。";
 
 // A CRM export file is fetched only after the caller confirms again.
 export function exportConfirmHeader(): Record<string, string> {

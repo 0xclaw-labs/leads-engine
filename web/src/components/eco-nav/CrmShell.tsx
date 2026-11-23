@@ -190,7 +190,7 @@ export function CrmShell({
       if (navTicket.current !== ticket || currentCrmScopeEpoch() !== scopeEpoch) return;
       const parsed = parseEcoNavView(body.model);
       if (!parsed) {
-        setNavModel(blockedEcoNavModel("unavailable", "authority_unavailable", "生态导航契约不兼容，已停止渲染。"));
+        setNavModel(blockedEcoNavModel("unavailable", "authority_unavailable", "导航数据不兼容，已停止渲染。"));
         setNavFault("生态导航没有载入。");
         return;
       }

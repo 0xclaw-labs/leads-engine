@@ -95,7 +95,7 @@ export function presentRoi(report: RoiReport | null): RoiView {
     marketingLiftProof: false,
     roiStatus: status,
     showCompleteRoi,
-    funnelReuse: report?.funnel_reuse ?? "漏斗阶段数字复用 HUI-1694 / HUI-1695，本报告不另算第三套漏斗。",
+    funnelReuse: report?.funnel_reuse ?? "漏斗阶段数字复用既有统计，本报告不另算第三套漏斗。",
     revenueLines,
     metricLines: (report?.metrics ?? []).map((line, index) => ({
       key: line.event_id || `${line.kind}-${index}`,
@@ -118,7 +118,7 @@ export function centsText(cents: number | null): string {
 export const STATUS_LABELS: Record<string, string> = {
   source_stats_only: "只有来源统计",
   incomplete: "数据不完整",
-  complete: "按收入口径分开的 ROI",
+  complete: "按收入分列的 ROI",
 };
 
 // ⑨ 引用 JSON 的提交前校验：引用是七类数组组成的复合文档，不适合拍平成结构化

@@ -126,7 +126,7 @@ export function modelStatusText(_verdict?: string): string {
 export function originLabel(origin: string): string {
   switch (origin) {
     case "fixture":
-      return "夹具";
+      return "样例";
     case "human":
       return "人工";
     default:

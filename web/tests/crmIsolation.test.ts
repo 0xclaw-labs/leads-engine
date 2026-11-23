@@ -20,7 +20,7 @@ describe("crm tenant isolation copy", () => {
     expect(line).toContain("白标品牌");
     expect(line).toContain("camp_local");
     expect(line).toContain("不能改归属");
-    expect(WHITE_LABEL_CHAIN_UNVERIFIED).toContain("仍未验证");
+    expect(WHITE_LABEL_CHAIN_UNVERIFIED).toContain("尚未完成验证");
     const page = readFileSync("src/app/(shell)/isolation/page.tsx", "utf8");
     const home = readFileSync("src/app/(shell)/page.tsx", "utf8");
     const desk = readFileSync("src/lib/workbench.ts", "utf8");

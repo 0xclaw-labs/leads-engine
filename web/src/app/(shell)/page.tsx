@@ -314,7 +314,7 @@ export default function Home() {
           <p className="muted">{visible ? "今天没有需要处理的客户工作。" : "正在整理今天的工作。"}</p>
         )}
         <details className="work-rationale">
-          <summary>排序与金额口径</summary>
+          <summary>排序与金额说明</summary>
           <p>
             <ToneBadge tone="human" /> 顺序：新咨询 → 今天应跟进 → 等待客户 → 逾期 → AI 草稿 → 人工接管 → 信息或权限。
             手工安排的下一步优先。

@@ -154,11 +154,11 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
         <Input id="matrix-revision" value={revision} onChange={(e) => setRevision(e.target.value)} />
       </div>
       <div className="public-form-field">
-        <Label htmlFor="matrix-grant-ref">授权引用 grant_ref</Label>
+        <Label htmlFor="matrix-grant-ref">授权引用编号</Label>
         <Input id="matrix-grant-ref" value={grantRef} onChange={(e) => setGrantRef(e.target.value)} />
       </div>
       <div className="public-form-field">
-        <Label htmlFor="matrix-license-ref">素材许可 license_ref</Label>
+        <Label htmlFor="matrix-license-ref">素材许可编号</Label>
         <Input id="matrix-license-ref" value={licenseRef} onChange={(e) => setLicenseRef(e.target.value)} />
       </div>
       <div className="public-form-field">

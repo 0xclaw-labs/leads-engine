@@ -33,7 +33,7 @@ describe("today workspace structure", () => {
   it("puts money/rationale behind a disclosure instead of a top KPI card", () => {
     const src = page();
     expect(src).toContain("<details");
-    expect(src).toContain("排序与金额口径");
+    expect(src).toContain("排序与金额说明");
     expect(src).not.toContain("<h2>金额分开看</h2>");
     const moneyIndex = src.indexOf("money-lines");
     const detailsIndex = src.indexOf("<details");
@@ -78,7 +78,7 @@ describe("today workspace structure", () => {
     expect(html.match(/data-surface-state="recovery"/g)).toHaveLength(1);
     expect(html).not.toContain("还没有工作范围");
     expect(html).not.toContain("正在整理今天的工作");
-    expect(html).not.toContain("排序与金额口径");
+    expect(html).not.toContain("排序与金额说明");
     expect(html).not.toContain("今天要完成的客户工作");
     expect(html).not.toContain("<table");
   });

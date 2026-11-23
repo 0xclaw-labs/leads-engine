@@ -124,7 +124,7 @@ export default function AttributionPage() {
       </div>
       {view.metricLines.length > 0 ? (
         <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
-          <h2>原口径指标</h2>
+          <h2>原始指标</h2>
           <ul>
             {view.metricLines.map((line) => (
               <li key={line.key}>

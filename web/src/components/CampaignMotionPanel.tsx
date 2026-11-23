@@ -230,15 +230,15 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
         <Input id="motion-budget-id" value={budgetID} onChange={(e) => setBudgetID(e.target.value)} />
       </div>
       <div className="public-form-field">
-        <Label htmlFor="motion-project-id">Motion project_id</Label>
+        <Label htmlFor="motion-project-id">Motion 项目 ID</Label>
         <Input id="motion-project-id" value={projectID} onChange={(e) => setProjectID(e.target.value)} />
       </div>
       <div className="public-form-field">
-        <Label htmlFor="motion-revision-id">Motion revision_id</Label>
+        <Label htmlFor="motion-revision-id">Motion 版本号</Label>
         <Input id="motion-revision-id" value={revisionID} onChange={(e) => setRevisionID(e.target.value)} />
       </div>
       <div className="public-form-field">
-        <Label htmlFor="motion-digest">Motion digest</Label>
+        <Label htmlFor="motion-digest">Motion 摘要</Label>
         <Input id="motion-digest" value={digest} onChange={(e) => setDigest(e.target.value)} />
       </div>
       <p>

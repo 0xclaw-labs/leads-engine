@@ -89,7 +89,7 @@ describe("intent grade presentation", () => {
     expect(modelStatusText("recorded")).toBe("真实模型未完成");
     expect(modelStatusText("PASS")).toBe("真实模型未完成");
     expect(modelStatusText()).toBe("真实模型未完成");
-    expect(originLabel("fixture")).toBe("夹具");
+    expect(originLabel("fixture")).toBe("样例");
     expect(originLabel("human")).toBe("人工");
     expect(originLabel("rules")).toBe("规则");
     expect(salesCorrectionActions()).toEqual(["修正分级", "驳回"]);
