@@ -252,12 +252,12 @@ export default function SessionPanel({
         <CardTitle>
           会话 <code>{session.id}</code>
         </CardTitle>
-        <p className="muted">
+        <div className="muted">
           <Badge variant="secondary">{MODE_TEXT[session.mode] ?? session.mode}</Badge>
           {" · "}轮次 {session.epoch} · 版本 {session.version} · {open ? "进行中" : "已结案"}
           {session.owner_member_id ? ` · 负责人 ${session.owner_label || "已接管（负责人待同步）"}` : ""}
           {session.lead_id ? ` · 线索 ${session.lead_id.slice(0, 12)}…` : " · 尚未受权留资"}
-        </p>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {error ? (
