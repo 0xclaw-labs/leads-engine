@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -375,8 +376,7 @@ export default function SessionPanel({
             <h3>跟进</h3>
             <Label htmlFor="follow-note">跟进备注</Label>
             <Textarea id="follow-note" aria-label="跟进备注" value={note} onChange={(event) => setNote(event.target.value)} disabled={busy} />
-            <Label htmlFor="follow-next">下一次跟进</Label>
-            <Input id="follow-next" aria-label="下一次跟进" type="datetime-local" value={nextAt} onChange={(event) => setNextAt(event.target.value)} disabled={busy} />
+            <DateTimeField label="下一次跟进" id="follow-next" value={nextAt} onChange={setNextAt} disabled={busy} />
             <Button variant="default" size="sm" type="submit" disabled={busy || !followUpSubmitAllowed(session.lead_id, note)}>记录跟进</Button>
           </form>
         ) : <p className="muted">跟进要先有受权线索。</p>}
