@@ -22,6 +22,7 @@ import (
 
 	"github.com/bianjiefilm/leads-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/leads-engine/server/internal/authz"
+	"github.com/bianjiefilm/leads-engine/server/internal/campaignmotion"
 	"github.com/bianjiefilm/leads-engine/server/internal/config"
 	"github.com/bianjiefilm/leads-engine/server/internal/db"
 	"github.com/bianjiefilm/leads-engine/server/internal/handoffsender"
@@ -91,6 +92,13 @@ type Server struct {
 
 	lightHandoffMu    sync.Mutex
 	lightHandoffLocks map[string]*sync.Mutex
+
+	// CampaignMotionEntitlement is an optional server-side verifier for MX-OPS
+	// execution preferences (priority/night/idle). Nil falls back to the local
+	// crm_entitlement_cache read model (fail-closed for free/unverified accounts).
+	CampaignMotionEntitlement campaignmotion.EntitlementVerifier
+	campaignMotionMu          sync.Mutex
+	campaignMotionLocks       map[string]*sync.Mutex
 	// IntentModel is an optional probe. Open leaves it nil. Task credentials
 	// stay on ReceptionPhraser and must not be stored as an intent grade.
 	IntentModel interface {
