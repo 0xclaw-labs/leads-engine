@@ -26,6 +26,7 @@ import (
 	"github.com/bianjiefilm/leads-engine/server/internal/db"
 	"github.com/bianjiefilm/leads-engine/server/internal/handoffsender"
 	"github.com/bianjiefilm/leads-engine/server/internal/identity"
+	"github.com/bianjiefilm/leads-engine/server/internal/lightcopy"
 	"github.com/bianjiefilm/leads-engine/server/internal/matrixdraftclient"
 	"github.com/bianjiefilm/leads-engine/server/internal/platformtask"
 	"github.com/bianjiefilm/leads-engine/server/internal/reception"
@@ -83,6 +84,13 @@ type Server struct {
 	// platform task meter. Nil means generate refuses with model_unavailable
 	// and capability reports model_ready=false.
 	LightCopyPhraser platformtask.TextGenerator
+	// LightCopyToolDispatcher is an optional restricted handoff seam to existing
+	// ecosystem tools (GoBoost/Swarm/DigitalHuman/ProductImage/AICut). Nil keeps
+	// handoffs at tool_entry_unavailable without blocking manual draft editing.
+	LightCopyToolDispatcher lightcopy.ToolDispatcher
+
+	lightHandoffMu    sync.Mutex
+	lightHandoffLocks map[string]*sync.Mutex
 	// IntentModel is an optional probe. Open leaves it nil. Task credentials
 	// stay on ReceptionPhraser and must not be stored as an intent grade.
 	IntentModel interface {
