@@ -1,10 +1,10 @@
 /**
- * POST /api/auth/sso/exchange 换码桥测试（fix/sso-restore：按生产副本实际语义，非 guanlan 模板语义）。
+ * POST /api/auth/sso/exchange 换码桥测试（fix/sso-login-gate：失败落回首页友好引导，不再 303 到不存在的 /login）。
  *
  * 生产契约（leads.modelxing.com）：
- *  - 所有失败都是 303 → https://leads.modelxing.com/login?sso=<粗粒度原因>（cache-control no-store）；
+ *  - 所有失败都是 303 → https://leads.modelxing.com/?sso_error=<粗粒度原因>（cache-control no-store）；
  *  - 原因词表只有五个：audience_mismatch / invalid_request / identity_unavailable /
- *    membership_required(仅 identity 403) / failed——identity 非 200 一律粗粒度 failed（已知债务）；
+ *    membership_required(仅 identity 403) / failed——identity 非 200 一律粗粒度 failed；
  *  - 成功只认 identity Set-Cookie 里出现 leads-engine_session=（cookie 名与 Go 侧
  *    LEADS_SESSION_COOKIE 生产显式值对齐；Go 缺省 leads_session 不被认）；
  *  - return_target 不呈递 identity，只在浏览器落点做站内白名单（safeReturnPath），缺省 /。
@@ -29,7 +29,7 @@ import {
 } from "../src/lib/sso-bridge";
 
 const HOST = "leads.modelxing.com";
-const LOGIN = (reason: string) => `https://${HOST}/login?sso=${reason}`;
+const SSO_ERROR_REDIRECT = (reason: string) => `https://${HOST}/?sso_error=${reason}`;
 
 function postReq(body: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest(`https://${HOST}/api/auth/sso/exchange`, {
@@ -50,46 +50,47 @@ beforeEach(() => {
   delete process.env.IDENTITY_SSO_EXCHANGE_URL;
 });
 
-describe("路由：Host / same-origin 纪律（失败 303 login?sso=audience_mismatch）", () => {
+describe("路由：Host / same-origin 纪律（失败 303 /?sso_error=audience_mismatch）", () => {
   it("陌生 Host → 303 audience_mismatch，no-store", async () => {
     const res = await POST(postReq("code=abc", { host: "evil.example", origin: "https://evil.example" }));
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe(LOGIN("audience_mismatch"));
+    expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("audience_mismatch"));
+    expect(res.headers.get("location")).not.toContain("/login");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(exchangeMock).not.toHaveBeenCalled();
   });
 
   it("无 Origin 且无 sec-fetch-site（非 same-origin）→ 303 audience_mismatch", async () => {
     const res = await POST(postReq("code=abc", { origin: "" }));
-    expect(res.headers.get("location")).toBe(LOGIN("audience_mismatch"));
+    expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("audience_mismatch"));
   });
 
   it("sec-fetch-site: cross-site（Origin 缺席）→ 303 audience_mismatch", async () => {
     const res = await POST(postReq("code=abc", { origin: "", "sec-fetch-site": "cross-site" }));
-    expect(res.headers.get("location")).toBe(LOGIN("audience_mismatch"));
+    expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("audience_mismatch"));
   });
 
   it("跨站 Origin → 303 audience_mismatch；www 子域 Origin 放行（无 code 落 invalid_request 证明过了门）", async () => {
     const evil = await POST(postReq("code=abc", { origin: "https://evil.example" }));
-    expect(evil.headers.get("location")).toBe(LOGIN("audience_mismatch"));
+    expect(evil.headers.get("location")).toBe(SSO_ERROR_REDIRECT("audience_mismatch"));
     const www = await POST(postReq("", { origin: `https://www.${HOST}` }));
     // 过了 origin 门，进到码形门（body 无 code）→ invalid_request 而非 audience
-    expect(www.headers.get("location")).toBe(LOGIN("invalid_request"));
+    expect(www.headers.get("location")).toBe(SSO_ERROR_REDIRECT("invalid_request"));
   });
 
   it("无 Origin 但 sec-fetch-site: same-origin（同源表单直提形态）放行", async () => {
     exchangeMock.mockRejectedValue(new Error("down"));
     const res = await POST(postReq("code=abc", { origin: "", "sec-fetch-site": "same-origin" }));
-    expect(res.headers.get("location")).toBe(LOGIN("identity_unavailable"));
+    expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("identity_unavailable"));
     expect(exchangeMock).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("路由：读码纪律（失败 303 login?sso=invalid_request）", () => {
+describe("路由：读码纪律（失败 303 /?sso_error=invalid_request）", () => {
   it("form 缺 code / 码形坏 → 303 invalid_request，identity 未被调", async () => {
     for (const body of ["", "return_target=/x", `code=${encodeURIComponent("a b")}`]) {
       const res = await POST(postReq(body));
-      expect(res.headers.get("location")).toBe(LOGIN("invalid_request"));
+      expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("invalid_request"));
     }
     expect(exchangeMock).not.toHaveBeenCalled();
   });
@@ -97,16 +98,16 @@ describe("路由：读码纪律（失败 303 login?sso=invalid_request）", () =
   it("JSON body {code} 也认；非字符串 code → invalid_request", async () => {
     exchangeMock.mockRejectedValue(new Error("down"));
     const ok = await POST(postReq(JSON.stringify({ code: "abc" }), { "content-type": "application/json" }));
-    expect(ok.headers.get("location")).toBe(LOGIN("identity_unavailable"));
+    expect(ok.headers.get("location")).toBe(SSO_ERROR_REDIRECT("identity_unavailable"));
     const bad = await POST(postReq(JSON.stringify({ code: 42 }), { "content-type": "application/json" }));
-    expect(bad.headers.get("location")).toBe(LOGIN("invalid_request"));
+    expect(bad.headers.get("location")).toBe(SSO_ERROR_REDIRECT("invalid_request"));
   });
 
   it("超 16KB body / 不认识的 content-type → invalid_request", async () => {
     const big = await POST(postReq(`code=${"a".repeat(17 * 1024)}`));
-    expect(big.headers.get("location")).toBe(LOGIN("invalid_request"));
+    expect(big.headers.get("location")).toBe(SSO_ERROR_REDIRECT("invalid_request"));
     const weird = await POST(postReq("code=abc", { "content-type": "text/plain" }));
-    expect(weird.headers.get("location")).toBe(LOGIN("invalid_request"));
+    expect(weird.headers.get("location")).toBe(SSO_ERROR_REDIRECT("invalid_request"));
     expect(exchangeMock).not.toHaveBeenCalled();
   });
 });
@@ -115,20 +116,20 @@ describe("路由：identity 交互（错误映射，粗粒度）", () => {
   it("identity 连不通（reject）→ 303 identity_unavailable", async () => {
     exchangeMock.mockRejectedValue(new Error("ECONNREFUSED"));
     const res = await POST(postReq("code=abc"));
-    expect(res.headers.get("location")).toBe(LOGIN("identity_unavailable"));
+    expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("identity_unavailable"));
   });
 
   it("identity 非 200 → 粗粒度 failed；仅 403 映射 membership_required", async () => {
     exchangeMock.mockResolvedValue({ status: 500, setCookie: [] });
     const res = await POST(postReq("code=abc"));
-    expect(res.headers.get("location")).toBe(LOGIN("failed"));
+    expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("failed"));
 
     exchangeMock.mockResolvedValue({ status: 401, setCookie: [] });
-    expect((await POST(postReq("code=abc"))).headers.get("location")).toBe(LOGIN("failed"));
+    expect((await POST(postReq("code=abc"))).headers.get("location")).toBe(SSO_ERROR_REDIRECT("failed"));
 
     exchangeMock.mockResolvedValue({ status: 403, setCookie: [] });
     expect((await POST(postReq("code=abc"))).headers.get("location")).toBe(
-      LOGIN("membership_required"),
+      SSO_ERROR_REDIRECT("membership_required"),
     );
   });
 
@@ -139,7 +140,7 @@ describe("路由：identity 交互（错误映射，粗粒度）", () => {
       setCookie: ["leads_session=tok; Path=/; HttpOnly", "leads_session_refresh=r; Path=/; HttpOnly"],
     });
     const res = await POST(postReq("code=abc"));
-    expect(res.headers.get("location")).toBe(LOGIN("failed"));
+    expect(res.headers.get("location")).toBe(SSO_ERROR_REDIRECT("failed"));
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 

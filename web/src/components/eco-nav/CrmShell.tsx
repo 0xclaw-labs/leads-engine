@@ -25,41 +25,108 @@ import {
   type ShellEntryFailure,
   type WorkScope,
 } from "@/lib/productShell";
+import {
+  AUTH_ACCOUNT_CENTER_URL,
+  buildLeadsReturnUrl,
+  buildPortalLoginUrl,
+  parseSsoErrorReason,
+  type SsoErrorReason,
+} from "@/lib/sso-entry";
 import { Button } from "@/components/ui/button";
 import { RendererProvider } from "@/vendor/painuo/react/v1/src/index";
 
-// 入口三种死路分开指路：未登录给入口指引（不伪造登录链接）、无范围给管理员路径、
-// 服务不可达给网络自查。都用 recovery/error 的可恢复态，不再用无处可去的死胡同 error。
-const ENTRY_STATE_COPY: Record<ShellEntryFailure, { kind: "recovery" | "error"; title: string; detail: string }> = {
-  unauthenticated: {
-    kind: "recovery",
-    title: "请先登录后进入工作台",
-    detail: "获客工作台不提供独立登录页；请从数海观澜生态工作台登录后进入，或联系管理员开通访问。",
-  },
-  no_scope: {
-    kind: "recovery",
-    title: "没有可用的工作范围",
-    detail: `${SCOPE_UNAVAILABLE}若刚被加入项目，请让主管理员确认成员关系后重试。`,
-  },
-  unreachable: {
+const SSO_LOGIN_ERROR_DETAIL: Record<Exclude<SsoErrorReason, "membership_required">, string> = {
+  identity_unavailable: "统一身份服务暂时不可用，未能完成登录，请稍后重新通过统一账号登录。",
+  audience_mismatch: "登录请求来源校验未通过，请重新通过 modelxing.com 统一账号登录。",
+  invalid_request: "一次性登录凭证无效或已过期，请重新通过 modelxing.com 统一账号登录。",
+  failed: "统一账号登录未能完成，请重新通过 modelxing.com 统一账号登录。",
+};
+
+// 产品门口友好准入引导：未登录给一键跳统一登录门户、无团队席位给切换账号与账号中心、
+// 服务不可达给可重试错误态；三种状态都提供真实可执行动作，不再停在死文字。
+function entryStateCopy(
+  failure: ShellEntryFailure,
+  ssoError?: SsoErrorReason | null,
+): { kind: "recovery" | "error"; title: string; detail: string } {
+  if (failure === "no_scope" || ssoError === "membership_required") {
+    return {
+      kind: "recovery",
+      title: "当前账号尚未开通数海获客席位",
+      detail: `当前账号尚未加入已开通数海获客的团队。${SCOPE_UNAVAILABLE}请联系主管理员确认成员关系后重试，或切换其他已开通账号。`,
+    };
+  }
+  if (failure === "unauthenticated") {
+    return {
+      kind: "recovery",
+      title: "请先登录后进入数海获客",
+      detail: ssoError
+        ? SSO_LOGIN_ERROR_DETAIL[ssoError]
+        : "请使用 modelxing.com 统一账号登录后进入工作台。",
+    };
+  }
+  return {
     kind: "error",
     title: "服务暂时没有响应",
     detail: "请检查网络后重试。",
-  },
-};
+  };
+}
 
-export function CrmEntryState({ failure, onRetry }: { failure: ShellEntryFailure; onRetry: () => void }) {
-  const copy = ENTRY_STATE_COPY[failure];
+export function CrmEntryState({
+  failure,
+  ssoError,
+  returnUrl,
+  onRetry,
+}: {
+  failure: ShellEntryFailure;
+  ssoError?: SsoErrorReason | null;
+  returnUrl?: string;
+  onRetry: () => void;
+}) {
+  const effectiveFailure: ShellEntryFailure = ssoError === "membership_required" ? "no_scope" : failure;
+  const copy = entryStateCopy(effectiveFailure, ssoError);
+  const loginUrl = buildPortalLoginUrl({ next: returnUrl });
+  const switchAccountUrl = buildPortalLoginUrl({ next: returnUrl, switchAccount: true });
+
+  const action =
+    effectiveFailure === "unauthenticated" ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button asChild size="sm">
+          <a href={loginUrl} data-testid="crm-sso-login">
+            通过 modelxing.com 统一账号登录
+          </a>
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+          重试
+        </Button>
+      </div>
+    ) : effectiveFailure === "no_scope" ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button asChild size="sm">
+          <a href={switchAccountUrl} data-testid="crm-sso-switch-account">
+            切换其他账号
+          </a>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <a href={AUTH_ACCOUNT_CENTER_URL} data-testid="crm-sso-account-center">
+            前往账号中心
+          </a>
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
+          重试
+        </Button>
+      </div>
+    ) : (
+      <Button type="button" size="sm" onClick={onRetry}>
+        重试
+      </Button>
+    );
+
   return (
     <SurfaceState
       kind={copy.kind}
       title={copy.title}
       detail={copy.detail}
-      action={
-        <Button type="button" size="sm" onClick={onRetry}>
-          重试
-        </Button>
-      }
+      action={action}
     />
   );
 }
@@ -117,6 +184,8 @@ export function CrmShell({
   const [authenticated, setAuthenticated] = useState(false);
   const [nickname, setNickname] = useState("账户");
   const [entryFailure, setEntryFailure] = useState<ShellEntryFailure | null>(null);
+  const [ssoError, setSsoError] = useState<SsoErrorReason | null>(null);
+  const [returnUrl, setReturnUrl] = useState<string | undefined>(undefined);
   const [entryPending, setEntryPending] = useState(true);
   const [entryChoosing, setEntryChoosing] = useState(false);
   const [switcher, setSwitcher] = useState<WorkScope[]>([]);
@@ -129,12 +198,27 @@ export function CrmShell({
   // 会话对账票据：重试与在途请求竞态时，只采纳最新一次的结果。
   const sessionTicket = useRef(0);
 
+  const clearSsoErrorQuery = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("sso_error")) return;
+    url.searchParams.delete("sso_error");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(window.history.state, "", next);
+  }, []);
+
   // 挂载与「重试」共用同一套对账流程。用票据替代 effect 里的 cancelled 标记，
   // 这样按钮触发的重跑能作废仍在途的上一次结果，不出现旧答案覆盖新答案。
-  const reconcileSession = useCallback((selectedTenant?: string) => {
+  const reconcileSession = useCallback((selectedTenant?: string, options?: { clearSsoError?: boolean }) => {
     const ticket = sessionTicket.current + 1;
     sessionTicket.current = ticket;
     resetCrmScopeAfterSso();
+    if (options?.clearSsoError) clearSsoErrorQuery();
+    const urlSsoError = options?.clearSsoError
+      ? null
+      : parseSsoErrorReason(new URLSearchParams(window.location.search).get("sso_error"));
+    setSsoError(urlSsoError);
+    setReturnUrl(buildLeadsReturnUrl(window.location.href));
     const scopeEpoch = currentCrmScopeEpoch();
     navTicket.current = { seq: navTicket.current.seq + 1, tenant: "" };
     setAuthenticated(false);
@@ -147,6 +231,12 @@ export function CrmShell({
     setLaunchBusy(false);
     setLaunchError("");
     const stored = selectedTenant ?? ((window.localStorage.getItem(CRM_TENANT_STORAGE_KEY) ?? "").trim() || null);
+    if (urlSsoError === "membership_required") {
+      setEntryPending(false);
+      setEntryFailure("no_scope");
+      releaseCrmTenant();
+      return;
+    }
     void resolveCrmSessionEntry(stored).then((result) => {
       if (sessionTicket.current !== ticket || currentCrmScopeEpoch() !== scopeEpoch) return;
       setEntryPending(false);
@@ -154,6 +244,10 @@ export function CrmShell({
         setEntryFailure(result.failure);
         releaseCrmTenant();
         return;
+      }
+      if (urlSsoError) {
+        setSsoError(null);
+        clearSsoErrorQuery();
       }
       setAuthenticated(true);
       setSwitcher(result.scopes);
@@ -165,7 +259,7 @@ export function CrmShell({
       setNickname(result.session.email || "账户");
       commitCrmTenant(result.session.memoryTenantId!);
     });
-  }, [model]);
+  }, [clearSsoErrorQuery, model]);
 
   useEffect(() => {
     reconcileSession();
@@ -285,7 +379,14 @@ export function CrmShell({
         ) : null}
         <DeskFrame scopes={switcher} scopeEmptyLabel={entryFailure === "unauthenticated" ? "未登录" : undefined} onScopeSwitch={(tenant) => reconcileSession(tenant)}>
           {entryPending ? <SurfaceState kind="loading" title="正在核验工作范围" />
-            : entryFailure ? <CrmEntryState failure={entryFailure} onRetry={() => reconcileSession()} />
+            : entryFailure ? (
+              <CrmEntryState
+                failure={entryFailure}
+                ssoError={ssoError}
+                returnUrl={returnUrl}
+                onRetry={() => reconcileSession(undefined, { clearSsoError: true })}
+              />
+            )
             : entryChoosing ? <SurfaceState kind="recovery" title="请选择工作范围" detail="你可以进入多个工作范围，请在顶部选择本次要处理的客户。" />
             : children}
         </DeskFrame>
