@@ -16,6 +16,8 @@ var (
 	ErrRevoked = errors.New("store: draft ref revoked")
 	// ErrBadEvent is an event this store refuses at the boundary.
 	ErrBadEvent = errors.New("store: bad source event")
+	// ErrStaleEvent is an older / out-of-order receipt that must not overwrite an adopted newer version.
+	ErrStaleEvent = errors.New("store: stale source event older than adopted version")
 )
 
 // MatrixDraftRef is the source-side reference to one AG10 copy draft.
@@ -55,13 +57,15 @@ type MatrixDraftRef struct {
 // MatrixDraftSourceFacts are the publish-source facts one event carries.
 // Nil metrics mean "not supplied"; they never mean zero.
 type MatrixDraftSourceFacts struct {
-	Kind           string
-	MatrixPlanID   string
-	MatrixItemID   string
-	ExternalPostID string
-	Reach          *int
-	Likes          *int
-	Leads          *int
+	Kind             string
+	SourceVersion    int
+	ExpectedRevision int
+	MatrixPlanID     string
+	MatrixItemID     string
+	ExternalPostID   string
+	Reach            *int
+	Likes            *int
+	Leads            *int
 }
 
 // MatrixDraftSourceEvent is one recorded provider event row.
@@ -165,11 +169,41 @@ func (s *Store) ListMatrixDraftRefs(tenantID, campaignID string) ([]MatrixDraftR
 	return out, rows.Err()
 }
 
+// GetLatestAdoptedMatrixDraftRef returns the highest-revision non-revoked draft
+// ref for one campaign inside one tenant.
+func (s *Store) GetLatestAdoptedMatrixDraftRef(tenantID, campaignID string) (MatrixDraftRef, bool, error) {
+	row := s.DB.QueryRow(`SELECT `+matrixDraftRefColumns+`
+		FROM matrix_draft_refs
+		WHERE tenant_id=? AND campaign_id=? AND status!='revoked'
+		ORDER BY revision DESC, created_at DESC, id DESC
+		LIMIT 1`, tenantID, campaignID)
+	ref, err := scanMatrixDraftRef(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MatrixDraftRef{}, false, nil
+	}
+	if err != nil {
+		return MatrixDraftRef{}, false, err
+	}
+	return ref, true, nil
+}
+
 // UpdateMatrixDraftReceipt records the receipt status only. It never touches
-// published or charged, and it never fills plan, item, or external post ids.
+// published or charged, never fills plan/item/post ids, and never un-revokes
+// a revoked draft or fabricates a published status.
 func (s *Store) UpdateMatrixDraftReceipt(tenantID, draftID, status string) error {
+	cleanStatus := strings.TrimSpace(status)
+	if strings.EqualFold(cleanStatus, "published") || strings.EqualFold(cleanStatus, "live") {
+		cleanStatus = "draft"
+	}
+	ref, err := s.GetMatrixDraftRef(tenantID, draftID)
+	if err != nil {
+		return err
+	}
+	if ref.Status == "revoked" {
+		return ErrRevoked
+	}
 	res, err := s.DB.Exec(`UPDATE matrix_draft_refs SET status=?, updated_at=?
-		WHERE tenant_id=? AND draft_id=?`, status, now(), tenantID, draftID)
+		WHERE tenant_id=? AND draft_id=? AND status!='revoked'`, cleanStatus, now(), tenantID, draftID)
 	if err != nil {
 		return err
 	}
@@ -201,8 +235,10 @@ func scanMatrixDraftRef(sc interface{ Scan(...any) error }) (MatrixDraftRef, err
 }
 
 // AppendMatrixDraftSourceEvent lands one publish-source event on one draft ref
-// row. A result fills only the refs and metrics the source actually sent; nil
-// metrics stay NULL. A revoke latches the row: later result events are refused.
+// row atomically. A result fills only the refs and metrics the source actually
+// sent; nil metrics stay NULL. A revoke latches the row: later result events
+// are refused. Stale receipts (older source_version or superseded revision) are
+// refused so they never overwrite an adopted newer version.
 // The same (tenant, provider event id) with the same fields is idempotent and
 // changes nothing; with different fields it is ErrEventConflict.
 func (s *Store) AppendMatrixDraftSourceEvent(tenantID, draftRefID, providerEventID, createdBy string, facts MatrixDraftSourceFacts) (bool, bool, error) {
@@ -214,16 +250,35 @@ func (s *Store) AppendMatrixDraftSourceEvent(tenantID, draftRefID, providerEvent
 	default:
 		return false, false, ErrBadEvent
 	}
+	if facts.SourceVersion < 0 || facts.ExpectedRevision < 0 {
+		return false, false, ErrBadEvent
+	}
+	for _, p := range []*int{facts.Reach, facts.Likes, facts.Leads} {
+		if p != nil && *p < 0 {
+			return false, false, ErrBadEvent
+		}
+	}
 	fp := sourceEventFingerprint(facts)
-	if ev, ok, err := s.findMatrixDraftSourceEvent(tenantID, providerEventID); err != nil {
+
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return false, false, err
+	}
+	defer tx.Rollback()
+
+	if ev, ok, err := findMatrixDraftSourceEventTx(tx, tenantID, providerEventID); err != nil {
 		return false, false, err
 	} else if ok {
 		if ev.Fingerprint != fp {
 			return false, false, ErrEventConflict
 		}
+		if err := tx.Commit(); err != nil {
+			return false, false, err
+		}
 		return false, true, nil
 	}
-	ref, err := s.getMatrixDraftRefRow(tenantID, draftRefID)
+
+	ref, err := getMatrixDraftRefRowTx(tx, tenantID, draftRefID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, false, ErrBadEvent
 	}
@@ -233,14 +288,40 @@ func (s *Store) AppendMatrixDraftSourceEvent(tenantID, draftRefID, providerEvent
 	if ref.Status == "revoked" {
 		return false, false, ErrRevoked
 	}
+
+	if facts.Kind == "result" {
+		if facts.ExpectedRevision > 0 && facts.ExpectedRevision < ref.Revision {
+			return false, false, ErrStaleEvent
+		}
+		var maxRev int
+		if err := tx.QueryRow(`SELECT COALESCE(MAX(revision), 0)
+			FROM matrix_draft_refs
+			WHERE tenant_id=? AND campaign_id=? AND status!='revoked'`,
+			tenantID, ref.CampaignID).Scan(&maxRev); err != nil {
+			return false, false, err
+		}
+		if maxRev > ref.Revision {
+			return false, false, ErrStaleEvent
+		}
+		if facts.SourceVersion > 0 {
+			maxSV, err := maxSourceVersionForRefTx(tx, tenantID, ref.ID)
+			if err != nil {
+				return false, false, err
+			}
+			if maxSV > 0 && facts.SourceVersion < maxSV {
+				return false, false, ErrStaleEvent
+			}
+		}
+	}
+
 	if facts.Kind == "revoke" {
-		if _, err := s.DB.Exec(`UPDATE matrix_draft_refs SET status='revoked', updated_at=?
+		if _, err := tx.Exec(`UPDATE matrix_draft_refs SET status='revoked', updated_at=?
 			WHERE id=? AND tenant_id=?`, now(), ref.ID, tenantID); err != nil {
 			return false, false, err
 		}
 	}
 	if facts.Kind == "result" {
-		if _, err := s.DB.Exec(`
+		if _, err := tx.Exec(`
 			UPDATE matrix_draft_refs SET
 				matrix_plan_id = COALESCE(NULLIF(?,''), matrix_plan_id),
 				matrix_item_id = COALESCE(NULLIF(?,''), matrix_item_id),
@@ -258,10 +339,13 @@ func (s *Store) AppendMatrixDraftSourceEvent(tenantID, draftRefID, providerEvent
 	}
 	id := newID("mdse_")
 	ts := now()
-	if _, err := s.DB.Exec(`INSERT INTO matrix_draft_source_events(
+	if _, err := tx.Exec(`INSERT INTO matrix_draft_source_events(
 			id, tenant_id, draft_ref_id, provider_event_id, kind, fingerprint, created_by, created_at)
 		VALUES(?,?,?,?,?,?,?,?)`,
 		id, tenantID, ref.ID, providerEventID, facts.Kind, fp, createdBy, ts); err != nil {
+		return false, false, err
+	}
+	if err := tx.Commit(); err != nil {
 		return false, false, err
 	}
 	return true, false, nil
@@ -286,8 +370,8 @@ func (s *Store) ListMatrixDraftSourceEvents(tenantID, draftRefID string) ([]Matr
 	return out, rows.Err()
 }
 
-func (s *Store) findMatrixDraftSourceEvent(tenantID, providerEventID string) (MatrixDraftSourceEvent, bool, error) {
-	row := s.DB.QueryRow(`SELECT id, tenant_id, draft_ref_id, provider_event_id, kind, fingerprint, created_by, created_at
+func findMatrixDraftSourceEventTx(tx *sql.Tx, tenantID, providerEventID string) (MatrixDraftSourceEvent, bool, error) {
+	row := tx.QueryRow(`SELECT id, tenant_id, draft_ref_id, provider_event_id, kind, fingerprint, created_by, created_at
 		FROM matrix_draft_source_events WHERE tenant_id=? AND provider_event_id=?`, tenantID, providerEventID)
 	var ev MatrixDraftSourceEvent
 	err := row.Scan(&ev.ID, &ev.TenantID, &ev.DraftRefID, &ev.ProviderEventID, &ev.Kind, &ev.Fingerprint, &ev.CreatedBy, &ev.CreatedAt)
@@ -298,6 +382,47 @@ func (s *Store) findMatrixDraftSourceEvent(tenantID, providerEventID string) (Ma
 		return MatrixDraftSourceEvent{}, false, err
 	}
 	return ev, true, nil
+}
+
+func maxSourceVersionForRefTx(tx *sql.Tx, tenantID, draftRefID string) (int, error) {
+	rows, err := tx.Query(`SELECT fingerprint FROM matrix_draft_source_events
+		WHERE tenant_id=? AND draft_ref_id=? AND kind='result'`, tenantID, draftRefID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	maxSV := 0
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return 0, err
+		}
+		if sv := parseFingerprintSourceVersion(fp); sv > maxSV {
+			maxSV = sv
+		}
+	}
+	return maxSV, rows.Err()
+}
+
+func parseFingerprintSourceVersion(fp string) int {
+	if !strings.HasPrefix(fp, "sv") {
+		return 0
+	}
+	idx := strings.IndexByte(fp, ':')
+	if idx <= 2 {
+		return 0
+	}
+	v, err := strconv.Atoi(fp[2:idx])
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v
+}
+
+func getMatrixDraftRefRowTx(tx *sql.Tx, tenantID, id string) (MatrixDraftRef, error) {
+	row := tx.QueryRow(`SELECT `+matrixDraftRefColumns+`
+		FROM matrix_draft_refs WHERE tenant_id=? AND id=?`, tenantID, id)
+	return scanMatrixDraftRef(row)
 }
 
 // getMatrixDraftRefRow loads the row by its primary key inside one tenant.
@@ -315,9 +440,20 @@ func sourceEventFingerprint(facts MatrixDraftSourceFacts) string {
 		}
 		return strconv.Itoa(*p)
 	}
-	sum := sha256.Sum256([]byte(strings.Join([]string{
+	parts := []string{
 		facts.Kind, facts.MatrixPlanID, facts.MatrixItemID, facts.ExternalPostID,
 		metric(facts.Reach), metric(facts.Likes), metric(facts.Leads),
-	}, "\x1f")))
-	return "fp_" + hex.EncodeToString(sum[:])
+	}
+	if facts.SourceVersion > 0 {
+		parts = append(parts, "sv="+strconv.Itoa(facts.SourceVersion))
+	}
+	if facts.ExpectedRevision > 0 {
+		parts = append(parts, "rev="+strconv.Itoa(facts.ExpectedRevision))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
+	digest := "fp_" + hex.EncodeToString(sum[:])
+	if facts.SourceVersion > 0 {
+		return "sv" + strconv.Itoa(facts.SourceVersion) + ":" + digest
+	}
+	return digest
 }

@@ -123,17 +123,19 @@ func (s *Server) handleChannelIngest(w http.ResponseWriter, r *http.Request) {
 		code = http.StatusOK
 	}
 	writeJSON(w, code, map[string]any{
-		"interaction_id":   result.InteractionID,
-		"candidate_id":     result.CandidateID,
-		"candidate_status": result.CandidateStatus,
-		"idempotent":       result.Idempotent,
-		"auto_reach":       false,
-		"phone_marketing":  result.PhoneMarketing,
-		"sms_marketing":    result.SMSMarketing,
-		"reply_allowed":    result.ReplyAllowed,
-		"reply_refusal":    result.ReplyRefusal,
-		"delivered":        false,
-		"verification":     result.Verification,
+		"interaction_id":           result.InteractionID,
+		"candidate_id":             result.CandidateID,
+		"candidate_status":         result.CandidateStatus,
+		"idempotent":               result.Idempotent,
+		"auto_reach":               false,
+		"phone_marketing":          result.PhoneMarketing,
+		"sms_marketing":            result.SMSMarketing,
+		"reply_allowed":            result.ReplyAllowed,
+		"reply_refusal":            result.ReplyRefusal,
+		"reply_authority":          result.ReplyAuthority,
+		"second_reply_bot_started": false,
+		"delivered":                false,
+		"verification":             result.Verification,
 	})
 }
 
