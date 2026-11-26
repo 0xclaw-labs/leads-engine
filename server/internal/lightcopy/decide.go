@@ -23,6 +23,7 @@ const (
 	ToolGoBoost      = "goboost"
 	ToolProductImage = "product_image"
 	ToolDigitalHuman = "digital_human"
+	ToolSwarm        = "swarm"
 	ToolAiCut        = "aicut"
 
 	OriginManual = "manual"
@@ -32,19 +33,34 @@ const (
 	StatusRecorded = "recorded"
 	StatusDeclined = "declined"
 	StatusRefused  = "refused"
+	StatusUnknown  = "unknown"
+	StatusRevoked  = "revoked"
 
-	ReasonModelUnavailable = "model_unavailable"
-	ReasonPlaceholder      = "placeholder_refused"
-	ReasonEmpty            = "empty_body"
-	ReasonTenant           = "tenant_mismatch"
-	ReasonPrice            = "price_expired"
-	ReasonUnauthorized     = "unauthorized_field"
-	ReasonMissing          = "fact_missing"
-	ReasonNothing          = "nothing_selected"
-	ReasonToolEntry        = "tool_entry_unavailable"
-	ReasonOpenExisting     = "open_existing_entry"
-	ReasonUnknownTool      = "unknown_tool"
-	ReasonAdvancedDeclined = "advanced_tool_declined"
+	ReasonModelUnavailable     = "model_unavailable"
+	ReasonPlaceholder          = "placeholder_refused"
+	ReasonEmpty                = "empty_body"
+	ReasonTenant               = "tenant_mismatch"
+	ReasonPrice                = "price_expired"
+	ReasonQuoteExpired         = "quote_expired"
+	ReasonUnauthorized         = "unauthorized_field"
+	ReasonUnconfirmed          = "fact_unconfirmed"
+	ReasonPIIDetected          = "pii_detected"
+	ReasonAssetUnauthorized    = "asset_unauthorized"
+	ReasonAssetExpired         = "asset_expired"
+	ReasonMissing              = "fact_missing"
+	ReasonNothing              = "nothing_selected"
+	ReasonToolEntry            = "tool_entry_unavailable"
+	ReasonOpenExisting         = "open_existing_entry"
+	ReasonUnknownTool          = "unknown_tool"
+	ReasonAdvancedDeclined     = "advanced_tool_declined"
+	ReasonPermissionRevoked    = "permission_revoked"
+	ReasonRevisionConflict     = "revision_conflict"
+	ReasonDraftModifiedByHuman = "draft_modified_by_human"
+	ReasonIdempotencyConflict  = "idempotency_key_conflict"
+	ReasonHandoffUnknown       = "handoff_status_unknown"
+	ReasonUngroundedClaim      = "ungrounded_claim_refused"
+	ReasonInvalidReturn        = "invalid_return_candidate"
+	ReasonHandoffNotActive     = "handoff_not_active"
 )
 
 // Draft is one saved text. Generated, Sent, Published and MarketingPermitted
@@ -78,6 +94,10 @@ type Subject struct {
 	TenantID        string
 	Title           string
 	ActivityRef     string
+	Scene           string
+	Question        string
+	Offer           string
+	NextStep        string
 	PriceCents      *int64
 	PriceValidUntil time.Time
 	ContactText     string
@@ -190,7 +210,18 @@ func Prompt(kind, language string, packet Packet) string {
 }
 
 func isPlaceholder(text string) bool {
-	return strings.Contains(text, "{{") || strings.Contains(text, "}}") || strings.Contains(text, "模板占位")
+	if strings.Contains(text, "{{") || strings.Contains(text, "}}") || strings.Contains(text, "模板占位") {
+		return true
+	}
+	lower := strings.ToLower(text)
+	for _, marker := range []string{
+		"[待填写", "【待填写", "[填写", "【填写", "__placeholder__", "<客户名>", "<价格>", "<门店名>", "[xxx]", "【xxx】",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return placeholderWordRe.MatchString(text)
 }
 
 // SaveManual stores the user's text. An edit clears confirmation.
@@ -231,15 +262,35 @@ var allowedFact = map[string]bool{
 	"title":        true,
 	"activity_ref": true,
 	"price_cents":  true,
+	"scene":        true,
+	"question":     true,
+	"offer":        true,
+	"next_step":    true,
 }
 
 var forbiddenFact = map[string]bool{
-	"contact_text":        true,
-	"contact_body":        true,
-	"sales_note":          true,
-	"internal_note":       true,
-	"profile":             true,
-	"auth_scope_snapshot": true,
+	"contact_text":         true,
+	"contact_body":         true,
+	"contact_fulltext":     true,
+	"customer_fulltext":    true,
+	"customer_dump":        true,
+	"sales_note":           true,
+	"internal_note":        true,
+	"internal_sales_note":  true,
+	"profile":              true,
+	"crm_profile":          true,
+	"unauthorized_profile": true,
+	"portrait":             true,
+	"unauthorized_portrait": true,
+	"phone":                true,
+	"phones":               true,
+	"phone_list":           true,
+	"mobile":               true,
+	"email":                true,
+	"emails":               true,
+	"wechat_id":            true,
+	"id_card":              true,
+	"auth_scope_snapshot":  true,
 }
 
 // Project copies only selected necessary facts. Any forbidden or unknown key
@@ -258,18 +309,43 @@ func Project(callerTenant string, sub Subject, selected []string, now time.Time)
 		}
 	}
 	facts := map[string]any{}
+	setText := func(key, raw string) string {
+		val := strings.TrimSpace(raw)
+		if val == "" {
+			return ReasonMissing
+		}
+		if hasPII, _ := ContainsSensitivePII(val); hasPII {
+			return ReasonPIIDetected
+		}
+		facts[key] = val
+		return ""
+	}
 	for _, key := range selected {
 		switch key {
 		case "title":
-			if strings.TrimSpace(sub.Title) == "" {
-				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, ReasonMissing
+			if r := setText("title", sub.Title); r != "" {
+				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, r
 			}
-			facts["title"] = sub.Title
 		case "activity_ref":
-			if strings.TrimSpace(sub.ActivityRef) == "" {
-				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, ReasonMissing
+			if r := setText("activity_ref", sub.ActivityRef); r != "" {
+				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, r
 			}
-			facts["activity_ref"] = sub.ActivityRef
+		case "scene":
+			if r := setText("scene", sub.Scene); r != "" {
+				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, r
+			}
+		case "question":
+			if r := setText("question", sub.Question); r != "" {
+				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, r
+			}
+		case "offer":
+			if r := setText("offer", sub.Offer); r != "" {
+				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, r
+			}
+		case "next_step":
+			if r := setText("next_step", sub.NextStep); r != "" {
+				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, r
+			}
 		case "price_cents":
 			if sub.PriceCents == nil || sub.PriceValidUntil.IsZero() || !sub.PriceValidUntil.After(now) {
 				return Packet{SubjectKind: sub.Kind, SubjectID: sub.ID, Facts: map[string]any{}}, ReasonPrice
@@ -285,7 +361,27 @@ var knownTool = map[string]bool{
 	ToolGoBoost:      true,
 	ToolProductImage: true,
 	ToolDigitalHuman: true,
+	ToolSwarm:        true,
 	ToolAiCut:        true,
+}
+
+// NormalizeTool maps supported professional tool names (and standard ecosystem
+// aliases) to their canonical tool ID. Unknown or in-CRM engine names fail closed.
+func NormalizeTool(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case ToolGoBoost:
+		return ToolGoBoost, true
+	case ToolProductImage, "product-image":
+		return ToolProductImage, true
+	case ToolDigitalHuman, "avatar":
+		return ToolDigitalHuman, true
+	case ToolSwarm, "fengqun":
+		return ToolSwarm, true
+	case ToolAiCut:
+		return ToolAiCut, true
+	default:
+		return "", false
+	}
 }
 
 // OpenHandoff records a request to open an existing tool entry.
