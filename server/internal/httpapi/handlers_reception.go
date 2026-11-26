@@ -17,6 +17,7 @@ import (
 	"github.com/bianjiefilm/leads-engine/server/internal/authz"
 	"github.com/bianjiefilm/leads-engine/server/internal/platformtask"
 	"github.com/bianjiefilm/leads-engine/server/internal/reception"
+	"github.com/bianjiefilm/leads-engine/server/internal/receptionguard"
 	"github.com/bianjiefilm/leads-engine/server/internal/store"
 )
 
@@ -459,7 +460,24 @@ func (s *Server) handleReceptionLead(w http.ResponseWriter, r *http.Request) {
 	if !readReceptionBody(w, r, &in) {
 		return
 	}
-	if in.Purpose != "sales_followup" || !in.AllowContact || strings.TrimSpace(in.ContactName) == "" || strings.TrimSpace(in.Phone) == "" || strings.TrimSpace(in.NoticeVersion) == "" {
+	boundary := receptionguard.GuardScopeBoundary(receptionguard.ScopeBoundaryInput{
+		TenantID:            sess.TenantID,
+		SessionScope:        receptionguard.ScopeCRMReception,
+		SourceApp:           "leads-engine",
+		Action:              receptionguard.BoundaryActionCreateLead,
+		InquiryKind:         receptionguard.InquirySalesConsult,
+		ExplicitSalesIntent: in.Purpose == "sales_followup",
+		ContactName:         strings.TrimSpace(in.ContactName),
+		ContactPhone:        strings.TrimSpace(in.Phone),
+		Consent: &receptionguard.ConsentRecord{
+			TenantID:         sess.TenantID,
+			AllowContact:     in.AllowContact,
+			Purpose:          in.Purpose,
+			MarketingAllowed: false,
+			NoticeVersion:    strings.TrimSpace(in.NoticeVersion),
+		},
+	})
+	if !boundary.Allowed {
 		fail(w, http.StatusBadRequest, "lead_not_authorized", "a lead requires purpose sales_followup, allow_contact, a name, a phone, and a notice version")
 		return
 	}
@@ -785,6 +803,16 @@ func (s *Server) handlePublicMessage(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "bad_request", "client_msg_id and text are required")
 		return
 	}
+	if scopeDec := receptionguard.GuardScopeBoundary(receptionguard.ScopeBoundaryInput{
+		TenantID:     sess.TenantID,
+		SessionScope: receptionguard.ScopeCRMReception,
+		SourceApp:    "leads-engine",
+		Action:       receptionguard.BoundaryActionIngestMessage,
+		PayloadText:  in.Text,
+	}); !scopeDec.Allowed {
+		fail(w, http.StatusBadRequest, "scope_boundary_violation", "entrusted-order data cannot be mixed into CRM reception sessions")
+		return
+	}
 	if _, err := s.St.GetReceptionMessageByClient(sess.ID, in.ClientMsgID); err == nil {
 		s.writeDuplicateMessage(w, sess, in.ClientMsgID)
 		return
@@ -1002,42 +1030,61 @@ func (s *Server) writeTranscript(w http.ResponseWriter, sess store.ReceptionSess
 func (s *Server) writePresentation(w http.ResponseWriter, sess store.ReceptionSession) {
 	replies, _ := s.St.ListReceptionReplies(sess.TenantID, sess.ID)
 	events, _ := s.St.ListReceptionEvents(sess.TenantID, sess.ID)
-	type channel struct {
-		Text  bool `json:"text"`
-		Audio bool `json:"audio"`
+
+	mode, ok := receptionguard.NormalizeMode(sess.Mode)
+	if !ok {
+		mode = receptionguard.ModeAI
 	}
-	type reply struct {
-		ReplyID     string  `json:"reply_id"`
-		Version     int     `json:"version"`
-		Text        string  `json:"text"`
-		Language    string  `json:"language"`
-		Deliverable channel `json:"deliverable"`
-	}
-	type event struct {
-		Type  string `json:"type"`
-		Epoch int    `json:"epoch"`
-	}
-	outReplies := []reply{}
+	srcReplies := make([]receptionguard.ProjectionSourceReply, 0, len(replies))
 	for _, rp := range replies {
 		textOK, audioOK := reception.MayDeliver(rp.Epoch, sess.Epoch, rp.Status)
 		if !textOK && !audioOK {
 			continue
 		}
-		outReplies = append(outReplies, reply{
-			ReplyID: rp.ID, Version: rp.SessionVersion, Text: rp.Body, Language: sess.Language,
-			Deliverable: channel{Text: textOK, Audio: audioOK},
+		src := receptionguard.SourceAI
+		humanAuthored := false
+		if rp.Kind == "human" || (sess.Mode == reception.ModeHuman && rp.Kind == "draft") {
+			src = receptionguard.SourceHuman
+			humanAuthored = true
+		}
+		srcReplies = append(srcReplies, receptionguard.ProjectionSourceReply{
+			ReplyID:        rp.ID,
+			TenantID:       rp.TenantID,
+			SessionID:      rp.SessionID,
+			Epoch:          rp.Epoch,
+			SessionVersion: rp.SessionVersion,
+			Stage:          receptionguard.StageApproved,
+			LegacyStatus:   rp.Status,
+			Text:           rp.Body,
+			Source:         src,
+			HumanAuthored:  humanAuthored,
 		})
 	}
-	outEvents := []event{}
+	srcEvents := make([]receptionguard.ProjectionSourceEvent, 0, len(events))
 	for _, ev := range events {
-		outEvents = append(outEvents, event{Type: ev.Type, Epoch: ev.Epoch})
+		srcEvents = append(srcEvents, receptionguard.ProjectionSourceEvent{
+			Type:  ev.Type,
+			Epoch: ev.Epoch,
+		})
 	}
+	proj := receptionguard.BuildPresentationProjection(receptionguard.ProjectionInput{
+		Consumer:  receptionguard.ConsumerDigitalHuman,
+		TenantID:  sess.TenantID,
+		SessionID: sess.ID,
+		Mode:      mode,
+		Epoch:     sess.Epoch,
+		Version:   sess.Version,
+		Language:  sess.Language,
+		Closed:    sess.Status != "open",
+		Replies:   srcReplies,
+		Events:    srcEvents,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
-		"session_ref": sess.ID,
-		"language":    sess.Language,
-		"version":     sess.Version,
-		"events":      outEvents,
-		"replies":     outReplies,
+		"session_ref": proj.SessionRef,
+		"language":    proj.Language,
+		"version":     proj.Version,
+		"events":      proj.Events,
+		"replies":     proj.Replies,
 	})
 }
 
