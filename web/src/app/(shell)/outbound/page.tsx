@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SurfaceState } from "@/components/workbench/chrome";
+import { LineListSkeleton, SurfaceState } from "@/components/workbench/chrome";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -175,6 +175,12 @@ export default function OutboundPage() {
         </Button>
       </header>
       {!tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
+      {tenant && contacts === null && !error ? (
+        <div data-state="loading" data-region="loading">
+          <SurfaceState kind="loading" title="正在读取外呼配置" detail="客户与授权列表马上就位。" />
+          <LineListSkeleton rows={2} />
+        </div>
+      ) : null}
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <p data-testid="outbound-note" data-tone="automation">{view.note}</p>
         <p className="muted">
@@ -269,7 +275,16 @@ export default function OutboundPage() {
             </Button>
           </>
         ) : null}
-        {error ? <SurfaceState kind="error" title="外呼没有记下" detail={error} /> : null}
+        {error ? (
+          <div data-state="error" data-region="error">
+            <SurfaceState
+              kind="error"
+              title="外呼没有记下"
+              detail={error}
+              action={<Button variant="secondary" type="button" size="sm" onClick={() => void load(tenant, ++loadSeq.current)}>重试</Button>}
+            />
+          </div>
+        ) : null}
       </div>
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>回执</h2>

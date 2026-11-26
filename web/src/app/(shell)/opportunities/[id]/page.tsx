@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  CATEGORY_LABELS,
   OPPORTUNITY_STAGES,
   STAGE_LABELS,
   amountView,
@@ -12,6 +13,7 @@ import {
   probabilityText,
   stageActionsFor,
   timelineLabel,
+  type BusinessCategory,
   type CallerView,
   type StageEvent,
 } from "@/lib/opportunity";
@@ -30,6 +32,7 @@ import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { Button, Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { Button as UiButton } from "@/components/ui/button";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
+import { humanTime } from "@/lib/humanize";
 import { MISSING_SCOPE, failureText, listTenantHeader, productError } from "@/lib/productShell";
 import { postJson } from "@/lib/fetchJson";
 import { IntentOnOpportunity } from "@/components/IntentOnOpportunity";
@@ -88,32 +91,44 @@ export default function OpportunityDetailPage() {
   const [budgetYuan, setBudgetYuan] = useState("");
   const [deadline, setDeadline] = useState("");
   const [assets, setAssets] = useState<AssetRow[]>([{ ...emptyAsset }]);
+  const loadGen = useRef({ seq: 0, tenant: "" });
 
   const draftAllowed = !!opp && canCreateServiceDraft(me ?? {}, opp);
 
   const loadDraft = useCallback(async () => {
+    const tenant = scope.tenant ?? "";
+    const ticket = loadGen.current;
+    if (!tenant || !id) return;
     try {
-      const res = await fetch(`/api/opportunities/${id}/service-draft`, scopeInit(scope.tenant));
+      const res = await fetch(`/api/opportunities/${id}/service-draft`, scopeInit(tenant));
+      if (loadGen.current !== ticket) return;
       if (res.ok) {
         const body = await res.json();
+        if (loadGen.current !== ticket) return;
         setDraft(body.handoff ?? null);
       } else {
         setDraft(null); // 404:尚未确认过(或功能未开启)
       }
     } catch {
-      setDraft(null);
+      if (loadGen.current === ticket) setDraft(null);
     }
   }, [id, scope.tenant]);
 
   const load = useCallback(async () => {
+    const tenant = scope.tenant ?? "";
+    const ticket = { seq: loadGen.current.seq + 1, tenant };
+    loadGen.current = ticket;
+    if (!tenant || !id) return;
     try {
       const [whoRes, oppRes, histRes] = await Promise.all([
-        fetch("/api/whoami", scopeInit(scope.tenant)),
-        fetch(`/api/opportunities/${id}`, scopeInit(scope.tenant)),
-        fetch(`/api/opportunities/${id}/stage-history`, scopeInit(scope.tenant)),
+        fetch("/api/whoami", scopeInit(tenant)),
+        fetch(`/api/opportunities/${id}`, scopeInit(tenant)),
+        fetch(`/api/opportunities/${id}/stage-history`, scopeInit(tenant)),
       ]);
+      if (loadGen.current !== ticket) return;
       if (whoRes.ok) setMe(await whoRes.json());
-      const oppBody = await oppRes.json();
+      const oppBody = await oppRes.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!oppRes.ok) {
         setMsg(failureText(oppBody, oppRes.status));
         setOpp(null);
@@ -123,10 +138,12 @@ export default function OpportunityDetailPage() {
       setOpp(oppBody);
       if (histRes.ok) {
         const histBody = await histRes.json();
+        if (loadGen.current !== ticket) return;
         setHistory(histBody.items ?? []);
       }
     } catch (e) {
-      setMsg((e as Error).message);
+      if (loadGen.current !== ticket) return;
+      setMsg(productError((e as Error).message));
     }
   }, [id, scope.tenant]);
 
@@ -135,18 +152,22 @@ export default function OpportunityDetailPage() {
     setHistory([]);
     setDraft(null);
     setPreview(null);
-    if (id) load();
-  }, [id, load, scope.epoch]);
+    setMsg("");
+    setDraftMsg("");
+    if (id && scope.tenant) void load();
+  }, [id, load, scope.epoch, scope.tenant]);
 
   useEffect(() => {
-    if (id && draftAllowed) loadDraft();
+    if (id && draftAllowed) void loadDraft();
   }, [id, draftAllowed, loadDraft]);
 
   const transition = async (to: string) => {
+    const ticket = loadGen.current;
     setBusy(true);
     setMsg("");
     try {
       const out = await postJson(`/api/opportunities/${id}/stage`, { "content-type": "application/json", ...(listTenantHeader(scope.tenant) ?? {}) }, { to_stage: to });
+      if (loadGen.current !== ticket) return;
       const body = out.body;
       if (!out.ok) {
         setMsg(failureText(body, out.status));
@@ -155,9 +176,9 @@ export default function OpportunityDetailPage() {
         await load();
       }
     } catch (e) {
-      setMsg((e as Error).message);
+      if (loadGen.current === ticket) setMsg(productError((e as Error).message));
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   };
 
@@ -185,10 +206,12 @@ export default function OpportunityDetailPage() {
     path: string,
     init: { method: string; payload?: unknown },
   ): Promise<Record<string, unknown> | null> => {
+    const ticket = loadGen.current;
     setBusy(true);
     setDraftMsg("");
     try {
       const out = await postJson(`/api/opportunities/${id}/service-draft${path}`, { "content-type": "application/json", ...(listTenantHeader(scope.tenant) ?? {}) }, init.payload);
+      if (loadGen.current !== ticket) return null;
       const body = out.body;
       if (!out.ok) {
         setDraftMsg(failureText(body, out.status));
@@ -196,10 +219,10 @@ export default function OpportunityDetailPage() {
       }
       return body as Record<string, unknown>;
     } catch (e) {
-      setDraftMsg((e as Error).message);
+      if (loadGen.current === ticket) setDraftMsg(productError((e as Error).message));
       return null;
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   };
 
@@ -269,9 +292,14 @@ export default function OpportunityDetailPage() {
   const draftActions = draft ? serviceDraftActions(draft) : null;
 
   return (
-    <main>
-      <h1>{opp.title}</h1>
-      <p className="muted">类别:{opp.business_category}(按类别隔离展示与统计)</p>
+    <main data-page="opportunity-detail" data-pattern="detail">
+      <header className="page-head" data-region="header">
+        <h1>{opp.title}</h1>
+        <UiButton variant="outline" size="sm" asChild>
+          <Link href="/opportunities">返回商机列表</Link>
+        </UiButton>
+      </header>
+      <p className="muted">类别：{CATEGORY_LABELS[opp.business_category as BusinessCategory] ?? opp.business_category}（按类别隔离展示与统计）</p>
       <ul>
         <li>当前阶段:{STAGE_LABELS[stage] ?? opp.stage}{opp.stage === "won" ? "(仅人工标记,非收款事实)" : ""}</li>
         <li>金额:<span data-numeric="true">{amt.text}{amt.unknown ? "" : `(${amt.sourceLabel})`}</span></li>
@@ -307,30 +335,16 @@ export default function OpportunityDetailPage() {
           <p className="muted">
             把已确认的需求事实交接给接单应用生成草稿;只携带你在下方显式确认的内容,缺失字段按缺失交接,绝不从 CRM 备注猜测。投递成功不代表成交。
           </p>
-          <div>
-            <p>
-              <Textarea
-                label="需求摘要(必填)"
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                rows={3}
-              />
-            </p>
-            <p>
-              <label>
-                服务类别(如 video-editing)
-                <br />
-                <Input label="服务类别(如 video-editing)" value={serviceCategory} onChange={(e) => setServiceCategory(e.target.value)} />
-              </label>
-            </p>
-            <p>
-              <label>
-                预算(元,可留空=缺失)
-                <Input label="预算(元,可留空=缺失)" value={budgetYuan} onChange={(e) => setBudgetYuan(e.target.value)} />
-              </label>
-              {"  "}
-              <DateTimeField label="截止日期(可留空=缺失)" type="date" value={deadline} onChange={setDeadline} />
-            </p>
+          <div className="stack-form">
+            <Textarea
+              label="需求摘要（必填）"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              rows={3}
+            />
+            <Input label="服务类别（如 video-editing）" value={serviceCategory} onChange={(e) => setServiceCategory(e.target.value)} />
+            <Input label="预算（元，可留空=缺失）" value={budgetYuan} onChange={(e) => setBudgetYuan(e.target.value)} />
+            <DateTimeField label="截止日期（可留空=缺失）" type="date" value={deadline} onChange={setDeadline} />
             <p className="muted">品牌/素材资产:每一项都必须填写完整引用(含 sha256),缺 hash 的引用一律拒绝,系统绝不代填。</p>
             {assets.map((a, i) => (
               <p key={i}>
@@ -370,7 +384,7 @@ export default function OpportunityDetailPage() {
               <h3>交接状态</h3>
               <p>{handoffStatusLine(draft)}</p>
               <p className="muted">
-                handoff_id:{draft.handoff_id};版本 v{draft.source_version};接单侧状态:{draft.target_status || "(未知)"}
+                交接编号：{draft.handoff_id}；版本 v{draft.source_version}；接单侧状态：{draft.target_status || "(未知)"}
               </p>
               <p className="queue-actions">
                 {draftActions?.canRefresh ? <Button variant="secondary" type="button" size="sm" loading={busy} onClick={() => doDraftAction("refresh")}>刷新接单侧状态</Button> : null}
@@ -401,12 +415,12 @@ export default function OpportunityDetailPage() {
       <ol>
         {history.map((e) => (
           <li key={e.changed_at + e.to_stage}>
-            {timelineLabel(e)} — {e.changed_at}
+            {timelineLabel(e)} — {humanTime(e.changed_at)}
           </li>
         ))}
       </ol>
 
-      <p>
+      <p className="muted foot-nav">
         <Link href="/opportunities">返回商机列表</Link>
       </p>
     </main>

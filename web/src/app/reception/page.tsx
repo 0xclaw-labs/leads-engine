@@ -6,6 +6,7 @@ import { RecordFrame, RecordListSkeleton, SurfaceState, useShellWidth } from "@/
 import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, acceptDeskPayload, factTone, listTenantHeader, pagePrimary, productError, receptionSessionFrame } from "@/lib/productShell";
+import { humanTime } from "@/lib/humanize";
 import { MODE_TEXT, PENDING_TEXT } from "@/lib/reception";
 import { searchToken, todayReturnHref } from "@/lib/workbench";
 import { receptionDeskLoad } from "./desk-load";
@@ -173,7 +174,7 @@ export default function ReceptionDeskPage() {
                 { label: "负责人", value: item.owner_label || (item.owner_member_id ? "已接管（负责人待同步）" : "尚未接管") },
                 { label: "待处理", value: item.pending_reason ? (PENDING_TEXT[item.pending_reason] ?? item.pending_reason) : "无" },
                 { label: "人工待办", value: item.human_todo ? "是" : "否" },
-                { label: "下一次跟进", value: item.next_follow_up_at || "未安排" },
+                { label: "下一次跟进", value: humanTime(item.next_follow_up_at) || "未安排" },
               ]}
               primary={primary ? (
                 <Button variant="default" type="button" size="sm" data-page-primary="true" onClick={open}>

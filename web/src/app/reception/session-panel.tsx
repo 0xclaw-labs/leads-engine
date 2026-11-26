@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ToneBadge } from "@/components/workbench/chrome";
+import { humanTime } from "@/lib/humanize";
 import { failureText, listTenantHeader, productError } from "@/lib/productShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,12 +111,16 @@ export default function SessionPanel({
   const [lead, setLead] = useState<LeadFields>(EMPTY_LEAD);
   const [note, setNote] = useState("");
   const [nextAt, setNextAt] = useState("");
+  const loadGen = useRef({ seq: 0, tenant: "", sessionId: "" });
 
   const load = useCallback(async () => {
+    const ticket = { seq: loadGen.current.seq + 1, tenant, sessionId };
+    loadGen.current = ticket;
     const res = await fetch(`/api/reception/sessions/${sessionId}`, {
       headers: listTenantHeader(tenant) ?? {},
     });
-    const body = await res.json();
+    const body = await res.json().catch(() => ({}));
+    if (loadGen.current !== ticket) return;
     if (!res.ok) {
       setError(failureText(body, res.status));
       setSession(null);
@@ -127,6 +133,10 @@ export default function SessionPanel({
   }, [sessionId, tenant]);
 
   useEffect(() => {
+    setSession(null);
+    setMessages([]);
+    setReplies([]);
+    setModel(null);
     setError("");
     setLead(EMPTY_LEAD);
     setNote("");
@@ -135,11 +145,12 @@ export default function SessionPanel({
     void load().catch((e: Error) => setError(productError(e.message)));
   }, [load]);
 
-  async function run(call: DeskCall | null, refused: string) {
+  async function run(call: DeskCall | null, refused: string): Promise<boolean> {
     if (!call) {
       setError(refused);
-      return;
+      return false;
     }
+    const ticket = loadGen.current;
     setBusy(true);
     setError("");
     try {
@@ -149,16 +160,19 @@ export default function SessionPanel({
         body: JSON.stringify(call.body),
       });
       const body = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return false;
       if (!res.ok) {
         setError(failureText(body, res.status));
-        return;
+        return false;
       }
       await load();
       onChanged();
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? productError(e.message) : "操作失败");
+      if (loadGen.current === ticket) setError(e instanceof Error ? productError(e.message) : "操作失败");
+      return false;
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   }
 
@@ -170,6 +184,7 @@ export default function SessionPanel({
       setError("先写人工回复");
       return;
     }
+    const ticket = loadGen.current;
     setBusy(true);
     setError("");
     try {
@@ -178,7 +193,8 @@ export default function SessionPanel({
         headers: { "content-type": "application/json", ...listTenantHeader(tenant) },
         body: JSON.stringify(created.body),
       });
-      const body = await res.json();
+      const body = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!res.ok) {
         setError(failureText(body, res.status));
         return;
@@ -194,7 +210,8 @@ export default function SessionPanel({
         headers: { "content-type": "application/json", ...listTenantHeader(tenant) },
         body: JSON.stringify(send!.body),
       });
-      const sentBody = await sent.json();
+      const sentBody = await sent.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!sent.ok) {
         setError(failureText(sentBody, sent.status));
         await load();
@@ -204,9 +221,9 @@ export default function SessionPanel({
       await load();
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? productError(e.message) : "发送失败");
+      if (loadGen.current === ticket) setError(e instanceof Error ? productError(e.message) : "发送失败");
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   }
 
@@ -242,8 +259,14 @@ export default function SessionPanel({
 
   const open = session.status === "open";
   const turns = [
-    ...messages.map((message) => ({ key: message.id, at: message.created_at ?? "", who: "访客", body: message.body })),
-    ...replies.map((reply) => ({ key: reply.id, at: reply.created_at ?? "", who: reply.kind === "human" ? "人工" : "草稿", body: reply.body })),
+    ...messages.map((message) => ({ key: message.id, at: message.created_at ?? "", who: "访客", tone: "human" as const, body: message.body })),
+    ...replies.map((reply) => ({
+      key: reply.id,
+      at: reply.created_at ?? "",
+      who: reply.kind === "human" ? "人工" : "草稿",
+      tone: reply.kind === "human" ? ("human" as const) : ("ai" as const),
+      body: reply.body,
+    })),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
   return (
@@ -266,14 +289,25 @@ export default function SessionPanel({
           </Alert>
         ) : null}
         <div className="chat-log" aria-label="会话记录">
-          {turns.map((turn) => <div key={turn.key} className="bubble shop"><p>{turn.who}：{turn.body}</p></div>)}
+          {turns.map((turn) => (
+            <div key={turn.key} className="bubble shop" data-tone={turn.tone}>
+              <p className="flex items-center gap-2">
+                <ToneBadge tone={turn.tone} />
+                <strong>{turn.who}</strong>
+                {turn.at ? <span className="muted">{humanTime(turn.at)}</span> : null}
+              </p>
+              <p>{turn.body}</p>
+            </div>
+          ))}
           {turns.length === 0 ? <p className="muted">还没有对话。</p> : null}
         </div>
         <ul className="desk-list">
           {replies.map((reply) => {
             const stale = reply.epoch !== session.epoch && reply.status !== "sent";
+            const replyTone = reply.kind === "human" ? "human" : "ai";
             return (
-              <li key={reply.id}>
+              <li key={reply.id} data-tone={replyTone}>
+                <ToneBadge tone={replyTone} />{" "}
                 <span>{REPLY_STATUS_TEXT[reply.status] ?? reply.status}</span>
                 <span> · 轮次 {reply.epoch} · 版本 {reply.session_version ?? ""}</span>
                 {stale ? <span> · 旧轮次，文本和音频都不能再发送</span> : null}
@@ -364,14 +398,18 @@ export default function SessionPanel({
           </form>
         ) : null}
         {session.lead_id ? (
-          <form className="stack-form" onSubmit={(event) => {
+          <form className="stack-form" onSubmit={async (event) => {
             event.preventDefault();
             const next = nextFollowUpRFC3339(nextAt);
             if (next === null) {
               setError("下一次跟进时间无效");
               return;
             }
-            void run(followUpCall(session.id, session.lead_id, note, next), "跟进要先有受权线索");
+            const ok = await run(followUpCall(session.id, session.lead_id, note, next), "跟进要先有受权线索");
+            if (ok) {
+              setNote("");
+              setNextAt("");
+            }
           }}>
             <h3>跟进</h3>
             <Label htmlFor="follow-note">跟进备注</Label>

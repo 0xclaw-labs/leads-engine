@@ -97,3 +97,16 @@ export function leadTitle(source?: { form?: string; activity?: string; channel?:
   if ((source?.activity ?? "").trim()) return "碰一碰线索";
   return "线索档案";
 }
+
+/** 成员显示名：隐藏 mem_* 等内部工程编号，只展示可读名称或兜底中文。 */
+export function memberDisplayLabel(label?: string | null, memberId?: string | null): string {
+  const cleanLabel = (label ?? "").trim();
+  if (cleanLabel && !cleanLabel.startsWith("mem_") && !isEngineeringRef(cleanLabel)) {
+    return cleanLabel;
+  }
+  const cleanId = (memberId ?? "").trim();
+  if (cleanId && !cleanId.startsWith("mem_") && !isEngineeringRef(cleanId)) {
+    return cleanId;
+  }
+  return cleanId ? "团队成员" : "未记录";
+}

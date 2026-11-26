@@ -243,28 +243,51 @@ export default function Home() {
 
   async function reviseDraft(item: DeskItem) {
     const headers = listTenantHeader(scope.tenant);
-    if (!headers) return;
+    if (!headers || saving) return;
     const body = reviseBody(draftFor(item.id).draftBody, item.draft_body).trim();
     if (!body) return;
-    const out = await postJson<{ sent?: boolean; message?: string; error?: string }>(`/api/workbench/drafts/${item.id}/revise`, { "content-type": "application/json", ...headers }, { body });
-    if (!out.ok || out.body.sent === true) {
-      setDraftMsg(!out.ok ? failureText(out.body, out.status) : (out.body.message ?? out.body.error ?? "没有修改"));
-      return;
+    setSaving(true);
+    setDraftMsg("");
+    try {
+      const out = await postJson<{ sent?: boolean; message?: string; error?: string }>(`/api/workbench/drafts/${item.id}/revise`, { "content-type": "application/json", ...headers }, { body });
+      if (!out.ok || out.body.sent === true) {
+        setDraftMsg(!out.ok ? failureText(out.body, out.status) : (out.body.message ?? out.body.error ?? "没有修改"));
+        return;
+      }
+      setDrafts((current) => {
+        const existing = current[item.id];
+        if (!existing) return current;
+        const next = { ...existing };
+        delete next.draftBody;
+        return { ...current, [item.id]: next };
+      });
+      setDraftMsg("草稿已修改，尚未发送");
+      setReload((n) => n + 1);
+    } catch (e) {
+      setDraftMsg(productError((e as Error).message));
+    } finally {
+      setSaving(false);
     }
-    setDraftMsg("草稿已修改，尚未发送");
-    setReload((n) => n + 1);
   }
 
   async function ignoreDraft(item: DeskItem) {
     const headers = listTenantHeader(scope.tenant);
-    if (!headers) return;
-    const out = await postJson<{ sent?: boolean; message?: string; error?: string }>(`/api/workbench/drafts/${item.id}/ignore`, { "content-type": "application/json", ...headers }, {});
-    if (!out.ok || out.body.sent === true) {
-      setDraftMsg(!out.ok ? failureText(out.body, out.status) : (out.body.message ?? out.body.error ?? "没有忽略"));
-      return;
+    if (!headers || saving) return;
+    setSaving(true);
+    setDraftMsg("");
+    try {
+      const out = await postJson<{ sent?: boolean; message?: string; error?: string }>(`/api/workbench/drafts/${item.id}/ignore`, { "content-type": "application/json", ...headers }, {});
+      if (!out.ok || out.body.sent === true) {
+        setDraftMsg(!out.ok ? failureText(out.body, out.status) : (out.body.message ?? out.body.error ?? "没有忽略"));
+        return;
+      }
+      setDraftMsg("已忽略草稿，没有发送");
+      setReload((n) => n + 1);
+    } catch (e) {
+      setDraftMsg(productError((e as Error).message));
+    } finally {
+      setSaving(false);
     }
-    setDraftMsg("已忽略草稿，没有发送");
-    setReload((n) => n + 1);
   }
 
   // P0：未选工作范围时整页只渲染壳级同款 recovery（默认标题「需要先选择工作范围」）。
@@ -451,7 +474,7 @@ function TodayRow({
   const confirmed = item.context?.facts ?? [];
   const questions = questionsFor(confirmed, item.context?.ask ?? item.ask ?? [], []);
   const tone = factTone({
-    kind: item.kind,
+    kind: group === "ai_draft" ? "ai_draft" : item.kind,
     auto: item.next?.auto_call === true || item.next?.auto_message === true || item.next?.create_order === true,
   });
   const destination = todayDestination(item);
@@ -563,8 +586,10 @@ function TodayRow({
               placeholder="改成要保留的措辞"
             />
             <div className="queue-actions">
-              <Button variant="secondary" type="button" size="sm" onClick={onRevise}>保存修改</Button>
-              <Button variant="ghost" type="button" size="sm" onClick={onIgnore}>忽略</Button>
+              <Button variant="secondary" type="button" size="sm" disabled={saving} onClick={onRevise}>
+                {saving ? "保存中…" : "保存修改"}
+              </Button>
+              <Button variant="ghost" type="button" size="sm" disabled={saving} onClick={onIgnore}>忽略</Button>
             </div>
           </div>
         ) : null}

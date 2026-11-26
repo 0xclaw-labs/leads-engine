@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   canDeleteContact,
   canEditContact,
@@ -15,9 +15,12 @@ import {
 } from "@/lib/contact";
 import { SurfaceState } from "@/components/workbench/chrome";
 import { Button, ConfirmDialog, Input } from "@/vendor/painuo/react/v1/src/index";
+import { Button as UiButton } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
+import { consentText } from "@/lib/finish";
+import { humanTime, memberDisplayLabel } from "@/lib/humanize";
 import { MISSING_SCOPE, failureText, pagePrimary, productError } from "@/lib/productShell";
 
 // 客户档案详情(HUI-1691 / FEAT-0192):基本信息/联系方式/标签/备注、
@@ -73,17 +76,24 @@ export default function ContactDetailPage() {
   // ⑩ 删除确认改应用内 ConfirmDialog，不再用浏览器原生确认框。
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [edit, setEdit] = useState({ name: "", phone: "", email: "", notes: "", tags: "" });
+  const loadGen = useRef({ seq: 0, tenant: "" });
 
   const load = useCallback(async () => {
+    const tenant = scope.tenant ?? "";
+    const ticket = { seq: loadGen.current.seq + 1, tenant };
+    loadGen.current = ticket;
+    if (!tenant || !id) return;
     try {
       const [whoRes, cRes, consRes, fuRes] = await Promise.all([
-        fetch("/api/whoami", scopeInit(scope.tenant)),
-        fetch(`/api/contacts/${id}`, scopeInit(scope.tenant)),
-        fetch(`/api/contacts/${id}/consents`, scopeInit(scope.tenant)),
-        fetch(`/api/contacts/${id}/followups`, scopeInit(scope.tenant)),
+        fetch("/api/whoami", scopeInit(tenant)),
+        fetch(`/api/contacts/${id}`, scopeInit(tenant)),
+        fetch(`/api/contacts/${id}/consents`, scopeInit(tenant)),
+        fetch(`/api/contacts/${id}/followups`, scopeInit(tenant)),
       ]);
+      if (loadGen.current !== ticket) return;
       if (whoRes.ok) setMe(await whoRes.json());
-      const cBody = await cRes.json();
+      const cBody = await cRes.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!cRes.ok) {
         setMsg(failureText(cBody, cRes.status));
         setContact(null);
@@ -94,15 +104,18 @@ export default function ContactDetailPage() {
         notes: cBody.notes ?? "", tags: cBody.tags ?? "" });
       if (consRes.ok) {
         const b = await consRes.json();
+        if (loadGen.current !== ticket) return;
         setConsents(b.items ?? []);
         setSummary(b.summary ?? null);
       }
       if (fuRes.ok) {
         const b = await fuRes.json();
+        if (loadGen.current !== ticket) return;
         setFollowups(b.items ?? []);
       }
     } catch (e) {
-      setMsg((e as Error).message);
+      if (loadGen.current !== ticket) return;
+      setMsg(productError((e as Error).message));
     }
   }, [id, scope.tenant]);
 
@@ -111,41 +124,50 @@ export default function ContactDetailPage() {
     setConsents([]);
     setFollowups([]);
     setSummary(null);
-    if (id) load();
-  }, [id, load, scope.epoch]);
+    setMsg("");
+    if (id && scope.tenant) void load();
+  }, [id, load, scope.epoch, scope.tenant]);
 
-  const post = async (path: string, body: unknown) => {
+  const post = async (path: string, body: unknown): Promise<boolean> => {
+    const tenant = scope.tenant ?? "";
+    const ticket = loadGen.current;
     setBusy(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/contacts/${id}${path}`, scopeInit(scope.tenant, {
+      const res = await fetch(`/api/contacts/${id}${path}`, scopeInit(tenant, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       }));
-      const b = await res.json();
+      const b = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return false;
       if (!res.ok) {
         setMsg(failureText(b, res.status));
-        return;
+        return false;
       }
       await load();
+      return true;
     } catch (e) {
-      setMsg((e as Error).message);
+      if (loadGen.current === ticket) setMsg(productError((e as Error).message));
+      return false;
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   };
 
   const patchProfile = async () => {
+    const tenant = scope.tenant ?? "";
+    const ticket = loadGen.current;
     setBusy(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/contacts/${id}`, scopeInit(scope.tenant, {
+      const res = await fetch(`/api/contacts/${id}`, scopeInit(tenant, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(edit),
       }));
-      const b = await res.json();
+      const b = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!res.ok) {
         setMsg(failureText(b, res.status));
         return;
@@ -153,17 +175,19 @@ export default function ContactDetailPage() {
       setMsg("档案已更新");
       await load();
     } catch (e) {
-      setMsg((e as Error).message);
+      if (loadGen.current === ticket) setMsg(productError((e as Error).message));
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   };
 
   const removeProfile = async () => {
+    const ticket = loadGen.current;
     setBusy(true);
     try {
       const res = await fetch(`/api/contacts/${id}`, scopeInit(scope.tenant, { method: "DELETE" }));
-      const b = await res.json();
+      const b = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!res.ok) {
         setMsg(failureText(b, res.status));
         return;
@@ -171,32 +195,45 @@ export default function ContactDetailPage() {
       setMsg("已删除(软删除:档案脱敏,授权/跟进记录保留审计)");
       setContact(null);
     } catch (e) {
-      setMsg((e as Error).message);
+      if (loadGen.current === ticket) setMsg(productError((e as Error).message));
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   };
 
   if (!scope.tenant) {
     return (
-      <main data-page="contact-detail">
+      <main data-page="contact-detail" data-pattern="detail">
         <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} />
       </main>
     );
   }
   if (!contact && !msg) {
     return (
-      <main data-page="contact-detail">
+      <main data-page="contact-detail" data-pattern="detail" data-state="loading">
         <SurfaceState kind="loading" title="正在打开档案" detail="联系方式、授权和跟进马上就位。" />
       </main>
     );
   }
   if (!contact) {
     return (
-      <main>
+      <main data-page="contact-detail" data-pattern="detail" data-state="error">
         <h1>客户档案详情</h1>
-        <p className="muted">不可见或不存在:{msg}(权限外档案一律 404,不泄露存在性)</p>
-        <Link href="/contacts">返回客户档案列表</Link>
+        <SurfaceState
+          kind="error"
+          title="打不开这份客户档案"
+          detail={productError(msg) || "这条档案不存在，或不在当前工作范围。"}
+          action={
+            <>
+              <Button variant="secondary" type="button" size="sm" onClick={() => void load()}>
+                重试
+              </Button>
+              <UiButton variant="outline" size="sm" asChild>
+                <Link href="/contacts">返回客户档案列表</Link>
+              </UiButton>
+            </>
+          }
+        />
       </main>
     );
   }
@@ -206,24 +243,29 @@ export default function ContactDetailPage() {
   const tags = parseTags(contact.tags);
 
   return (
-    <main>
-      <h1>{contact.name || "未填写称呼"}</h1>
+    <main data-page="contact-detail" data-pattern="detail">
+      <header className="page-head" data-region="header">
+        <h1>{contact.name || "未填写称呼"}</h1>
+        <UiButton variant="outline" size="sm" asChild>
+          <Link href="/contacts">返回客户档案列表</Link>
+        </UiButton>
+      </header>
       <p className="muted">
-        类别:{CATEGORY_TEXT[contact.business_category] ?? contact.business_category} · 来源:{SOURCE_TEXT[contact.source_type] ?? contact.source_type} ·
-        档案级授权:{contact.consent_status}
+        类别：{CATEGORY_TEXT[contact.business_category] ?? contact.business_category} · 来源：{SOURCE_TEXT[contact.source_type] ?? contact.source_type} ·
+        档案级授权：{consentText(contact.consent_status)}
       </p>
 
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>基本信息与联系方式</h2>
         <ul>
-          <li>姓名:{contact.name || "未填写称呼"}</li>
-          <li>手机号:{contact.phone || "(未填)"}</li>
-          <li>邮箱:{contact.email || "(未填)"}</li>
-          <li>标签:{tags.length > 0 ? tags.join(" / ") : "(无)"}</li>
-          <li>备注:{contact.notes || "(无)"}</li>
-          <li className="muted">创建于 {contact.created_at}</li>
+          <li>姓名：{contact.name || "未填写称呼"}</li>
+          <li>手机号：{contact.phone || "(未填)"}</li>
+          <li>邮箱：{contact.email || "(未填)"}</li>
+          <li>标签：{tags.length > 0 ? tags.join(" / ") : "(无)"}</li>
+          <li>备注：{contact.notes || "(无)"}</li>
+          <li className="muted">创建于 {humanTime(contact.created_at)}</li>
         </ul>
-        <p className="muted">联系方式仅存档于本商家租户,不作为平台账号注册依据;日志与 URL 均不承载明文。</p>
+        <p className="muted">联系方式仅存档于本商家租户，不作为平台账号注册依据；日志与链接均不承载明文。</p>
       </div>
 
       {allowed ? (
@@ -254,20 +296,24 @@ export default function ContactDetailPage() {
       )}
 
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
-        <h2>授权(consent)来源明细</h2>
+        <h2>来源授权明细</h2>
         {summary ? <p className="muted">{marketingSummaryLine(summary)}</p> : null}
-        {consents.length === 0 ? <p className="muted">暂无来源授权记录。</p> : null}
+        {consents.length === 0 ? (
+          <div data-state="empty">
+            <SurfaceState kind="empty" title="暂无来源授权记录" detail="客户通过表单或活动提交授权后会出现在这里。" />
+          </div>
+        ) : null}
         <ul>
           {consents.map((c) => (
             <li key={c.id}>
-              来源提交 <code>{c.source_submission_ref}</code>(渠道 {c.source_channel || "未填"}) ·
+              来源提交 <code>{c.source_submission_ref}</code>（渠道 {c.source_channel || "未填"}） ·
               告知版本 {c.notice_version || "未填"} · 用途 {c.purpose} ·{" "}
               <strong>{consentStatusLabel(c)}</strong>
-              {c.revoked_at ? `(撤销于 ${c.revoked_at},原因:${c.revoked_reason || "未记录"})` : null}
+              {c.revoked_at ? `（撤销于 ${humanTime(c.revoked_at)}，原因：${c.revoked_reason || "未记录"}）` : null}
               {allowed && !c.revoked_at ? (
                 <>
                   {" "}
-                  <Button variant="secondary" type="button" size="sm" loading={busy} onClick={() => post(`/consents/${c.id}/revoke`, { reason: "档案页撤销该来源授权" })}>
+                  <Button variant="secondary" type="button" size="sm" loading={busy} onClick={() => void post(`/consents/${c.id}/revoke`, { reason: "档案页撤销该来源授权" })}>
                     撤销此来源
                   </Button>
                 </>
@@ -276,25 +322,30 @@ export default function ContactDetailPage() {
           ))}
         </ul>
         {allowed ? (
-          <p className="muted">撤销是持久标记:同来源提交的事件再次到达只会原样返回,不能恢复授权;新授权需新的来源提交。</p>
+          <p className="muted">撤销是持久标记：同来源提交的事件再次到达只会原样返回，不能恢复授权；新授权需新的来源提交。</p>
         ) : null}
       </div>
 
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>跟进时间线</h2>
-        <ol>
+        <ol className="desk-list">
           {followups.map((f) => (
             <li key={f.id}>
-              {f.created_at} · 成员 <code>{f.member_id}</code>: {f.note}
+              <p>{f.note}</p>
+              <p className="muted">{humanTime(f.created_at)} · {memberDisplayLabel(undefined, f.member_id)}</p>
             </li>
           ))}
         </ol>
-        {followups.length === 0 ? <p className="muted">暂无跟进记录。</p> : null}
+        {followups.length === 0 ? (
+          <div data-state="empty">
+            <SurfaceState kind="empty" title="暂无跟进记录" detail="在下方追加跟进后，记录会按时间顺序留在这里。" />
+          </div>
+        ) : null}
         {allowed ? (
           <div>
             <div className="public-form-field">
               <Label htmlFor="contact-followup">追加跟进</Label>
-              <Textarea id="contact-followup" value={followupNote} onChange={(e) => setFollowupNote(e.target.value)} placeholder="追加跟进(只追加,不可修改;全文不入日志)" />
+              <Textarea id="contact-followup" value={followupNote} onChange={(e) => setFollowupNote(e.target.value)} placeholder="追加跟进（只追加，不可修改；保存失败会保留你的输入）" />
             </div>
             <div className="queue-actions">
               <Button
@@ -303,7 +354,10 @@ export default function ContactDetailPage() {
                 size="sm"
                 loading={busy}
                 disabled={!followupNote.trim()}
-                onClick={async () => { await post("/followups", { note: followupNote }); setFollowupNote(""); }}
+                onClick={async () => {
+                  const ok = await post("/followups", { note: followupNote });
+                  if (ok) setFollowupNote("");
+                }}
               >
                 追加跟进
               </Button>

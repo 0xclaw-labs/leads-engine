@@ -284,11 +284,7 @@ export default function ChannelInteractionsPage() {
           </div>
           <Checkbox label="明确意向" checked={intent} onCheckedChange={(checked) => setIntent(checked)} />
         </div>
-        <p>
-          <label>
-            <Input label="正文" value={text} onChange={(e) => setText(e.target.value)} />
-          </label>
-        </p>
+        <Input label="正文" value={text} onChange={(e) => setText(e.target.value)} />
         <Button type="button" data-page-primary="true" onClick={saveEvent}>
           接入
         </Button>

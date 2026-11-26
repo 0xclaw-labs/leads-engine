@@ -58,3 +58,32 @@ const FACT_LABELS: Record<string, string> = {
 export function factLabel(key: string): string {
   return FACT_LABELS[key] ?? key;
 }
+
+export interface FormattedLightFact {
+  key: string;
+  label: string;
+  value: string;
+}
+
+/** HUI-2626：把轻文案事实对象格式化成中文键值列表，正式页面禁止 JSON dump。 */
+export function formatLightCopyFacts(facts: unknown): FormattedLightFact[] {
+  if (!facts || typeof facts !== "object" || Array.isArray(facts)) return [];
+  const entries: FormattedLightFact[] = [];
+  for (const [key, raw] of Object.entries(facts as Record<string, unknown>)) {
+    let value = "未记录";
+    if (key === "price_cents" && typeof raw === "number" && Number.isFinite(raw)) {
+      value = `¥${(raw / 100).toFixed(2)}`;
+    } else if (typeof raw === "string") {
+      value = raw.trim() || "未记录";
+    } else if (typeof raw === "number" && Number.isFinite(raw)) {
+      value = String(raw);
+    } else if (typeof raw === "boolean") {
+      value = raw ? "是" : "否";
+    } else if (Array.isArray(raw)) {
+      const joined = raw.map((item) => String(item ?? "").trim()).filter(Boolean).join("、");
+      value = joined || "未记录";
+    }
+    entries.push({ key, label: factLabel(key), value });
+  }
+  return entries;
+}

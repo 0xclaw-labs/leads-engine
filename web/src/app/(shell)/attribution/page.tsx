@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RendererProvider, Status } from "@/vendor/painuo/react/v1/src/index";
 import { SurfaceState, useShellWidth } from "@/components/workbench/chrome";
 import { Button } from "@/components/ui/button";
@@ -21,9 +21,19 @@ export default function AttributionPage() {
   const [raw, setRaw] = useState("");
   const [report, setReport] = useState<RoiReport | null>(null);
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const reqGen = useRef({ seq: 0, tenant: "" });
   const view = presentRoi(report);
 
+  useEffect(() => {
+    reqGen.current = { seq: reqGen.current.seq + 1, tenant };
+    setReport(null);
+    setErr("");
+    setBusy(false);
+  }, [scope.epoch, tenant]);
+
   async function recalculate() {
+    if (busy) return;
     if (!tenant) {
       setErr(MISSING_SCOPE);
       setReport(null);
@@ -46,7 +56,10 @@ export default function AttributionPage() {
       setReport(null);
       return;
     }
+    const ticket = { seq: reqGen.current.seq + 1, tenant };
+    reqGen.current = ticket;
     setErr("");
+    setBusy(true);
     try {
       const res = await fetch("/api/roi/recalculate", {
         method: "POST",
@@ -54,6 +67,7 @@ export default function AttributionPage() {
         body: JSON.stringify(body),
       });
       const data = (await res.json().catch(() => ({}))) as RoiReport & { message?: string; error?: string };
+      if (reqGen.current !== ticket) return;
       if (!res.ok) {
         setReport(null);
         setErr(failureText(data, res.status));
@@ -61,8 +75,11 @@ export default function AttributionPage() {
       }
       setReport(data);
     } catch (e) {
+      if (reqGen.current !== ticket) return;
       setReport(null);
       setErr(productError((e as Error).message));
+    } finally {
+      if (reqGen.current === ticket) setBusy(false);
     }
   }
 
@@ -98,16 +115,26 @@ export default function AttributionPage() {
             <Label htmlFor="roi-citation">来源、事件与费用引用</Label>
             <textarea
               id="roi-citation"
+              className="flex min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
               rows={8}
               placeholder="写下来源、事件、费用和收入引用"
             />
           </div>
-          <Button type="button" data-page-primary="true" disabled={!tenant} onClick={() => void recalculate()}>
-            {pagePrimary("attribution")}
+          <Button type="button" data-page-primary="true" disabled={!tenant || busy} onClick={() => void recalculate()}>
+            {busy ? "复算中…" : pagePrimary("attribution")}
           </Button>
-          {err ? <SurfaceState kind="error" title="没有复算出来" detail={productError(err)} /> : null}
+          {err ? (
+            <div data-state="error" data-region="error">
+              <SurfaceState
+                kind="error"
+                title="没有复算出来"
+                detail={productError(err)}
+                action={<Button variant="secondary" type="button" size="sm" onClick={() => void recalculate()}>重试</Button>}
+              />
+            </div>
+          ) : null}
         </CardContent>
       </Card>
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">

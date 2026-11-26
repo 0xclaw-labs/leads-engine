@@ -9,6 +9,8 @@ import { Button, Input, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { Button as UiButton } from "@/components/ui/button";
 import { canExportContacts, searchGuard } from "@/lib/contact";
 import { contactRowFacts, consentText } from "@/lib/finish";
+import { humanTime, memberDisplayLabel } from "@/lib/humanize";
+import { persistListMemory, readListMemory, recallListState, rememberListState } from "@/lib/listMemory";
 import { scopeInit, useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, pagePrimary, productError } from "@/lib/productShell";
 
@@ -91,6 +93,20 @@ export default function ContactsPage() {
   const drawerGen = useRef({ seq: 0, tenant: "" });
   // 列表票号：hydrate 前的空头请求、切范围后的迟到响应，一律不允许覆盖新状态。
   const listGen = useRef({ seq: 0, tenant: "" });
+  const pendingScrollY = useRef<number | null>(null);
+
+  const saveListPosition = useCallback((nextName: string, nextTag: string) => {
+    const tenant = scope.tenant ?? "";
+    if (!tenant) return;
+    const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
+    persistListMemory(
+      rememberListState(readListMemory(), tenant, "contacts", {
+        queryName: nextName,
+        queryTag: nextTag,
+        scrollY,
+      }),
+    );
+  }, [scope.tenant]);
 
   const load = useCallback(async (q: string) => {
     const tenant = scope.tenant ?? "";
@@ -120,16 +136,34 @@ export default function ContactsPage() {
   }, [scope.tenant]);
 
   useEffect(() => {
-    setName("");
-    setTag("");
+    const tenant = scope.tenant ?? "";
+    const restored = recallListState(readListMemory(), tenant, "contacts");
+    const restoredName = restored.queryName ?? "";
+    const restoredTag = restored.queryTag ?? "";
+    pendingScrollY.current = typeof restored.scrollY === "number" ? restored.scrollY : null;
+    setName(restoredName);
+    setTag(restoredTag);
     setItems(null);
     setDrawerId(null);
-    drawerGen.current = { seq: drawerGen.current.seq + 1, tenant: scope.tenant ?? "" };
-    load("");
+    drawerGen.current = { seq: drawerGen.current.seq + 1, tenant };
+    const params = new URLSearchParams();
+    if (restoredName) params.set("name", restoredName);
+    if (restoredTag) params.set("tag", restoredTag);
+    const q = params.toString();
+    void load(q ? `?${q}` : "");
     fetch("/api/whoami", scopeInit(scope.tenant))
       .then(async (res) => (res.ok ? setMe(await res.json()) : setMe({})))
       .catch(() => setMe({}));
   }, [load, scope.epoch, scope.tenant]);
+
+  useEffect(() => {
+    if (items === null || pendingScrollY.current === null) return;
+    const targetY = pendingScrollY.current;
+    pendingScrollY.current = null;
+    if (targetY > 0 && typeof window !== "undefined") {
+      window.scrollTo(0, targetY);
+    }
+  }, [items]);
 
   const search = () => {
     const guard = searchGuard(name, tag);
@@ -137,11 +171,12 @@ export default function ContactsPage() {
       setError(guard);
       return;
     }
+    saveListPosition(name, tag);
     const params = new URLSearchParams();
     if (name.trim()) params.set("name", name.trim());
     if (tag.trim()) params.set("tag", tag.trim());
     const q = params.toString();
-    load(q ? `?${q}` : "");
+    void load(q ? `?${q}` : "");
   };
 
   const create = async () => {
@@ -223,8 +258,8 @@ export default function ContactsPage() {
   };
 
   return (
-    <main data-page="contacts">
-      <header className="page-head">
+    <main data-page="contacts" data-pattern="list">
+      <header className="page-head" data-region="header">
         <h1>客户档案</h1>
       </header>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
@@ -238,7 +273,7 @@ export default function ContactsPage() {
         <Input label="按标签搜索(如 vip)" value={tag} onChange={(e) => setTag(e.target.value)} />
         <div className="queue-actions">
           <Button variant="secondary" type="button" onClick={search}>搜索</Button>
-          <Button variant="ghost" type="button" onClick={() => { setName(""); setTag(""); load(""); }}>重置</Button>
+          <Button variant="ghost" type="button" onClick={() => { setName(""); setTag(""); saveListPosition("", ""); void load(""); }}>重置</Button>
           {me && canExportContacts(me) ? (
             <Button variant="secondary" type="button" onClick={exportCsv}>导出 CSV(owner)</Button>
           ) : null}
@@ -246,7 +281,16 @@ export default function ContactsPage() {
         <p className="muted">不支持按手机号搜索或导出筛选;导出仅 owner 可用且会在服务端留痕。</p>
       </div>
 
-      {error ? <SurfaceState kind="error" title="这一步没有完成" detail={error} /> : null}
+      {error ? (
+        <div data-state="error" data-region="error">
+          <SurfaceState
+            kind="error"
+            title="这一步没有完成"
+            detail={error}
+            action={<Button variant="secondary" type="button" size="sm" onClick={search}>重试</Button>}
+          />
+        </div>
+      ) : null}
 
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>新建档案</h2>
@@ -302,7 +346,9 @@ export default function ContactsPage() {
         </div>
       ) : null}
       {items !== null && items.length === 0 && !error ? (
-        <SurfaceState kind="empty" title="还没有客户" detail="这个范围里还没有你能查看的档案。别人名下的档案不会出现在这里。" />
+        <div data-state="empty" data-region="empty">
+          <SurfaceState kind="empty" title="还没有客户" detail="这个范围里还没有你能查看的档案。别人名下的档案不会出现在这里。" />
+        </div>
       ) : null}
       {items && items.length > 0 ? (
         <RecordList
@@ -311,7 +357,10 @@ export default function ContactsPage() {
             id: c.id,
             title: c.name,
             action: "查看详情",
-            onOpen: () => openDrawer(c.id),
+            onOpen: () => {
+              saveListPosition(name, tag);
+              openDrawer(c.id);
+            },
             facts: contactRowFacts(c),
           }))}
         />
@@ -325,7 +374,11 @@ export default function ContactsPage() {
         width={width}
         footer={
           drawerId ? (
-            <UiButton variant="outline" size="sm" asChild><Link href={`/contacts/${drawerId}`}>打开完整档案</Link></UiButton>
+            <UiButton variant="outline" size="sm" asChild>
+              <Link href={`/contacts/${drawerId}`} onClick={() => saveListPosition(name, tag)}>
+                打开完整档案
+              </Link>
+            </UiButton>
           ) : null
         }
       >
@@ -351,9 +404,9 @@ export default function ContactsPage() {
               ))}
             </ul>
             <p className="muted">
-              手机号:{drawerContact.phone || "(未填)"} · 邮箱:{drawerContact.email || "(未填)"}
+              手机号：{drawerContact.phone || "(未填)"} · 邮箱：{drawerContact.email || "(未填)"}
             </p>
-            <p className="muted">档案级授权:{consentText(drawerContact.consent_status)} · 创建于 {drawerContact.created_at}</p>
+            <p className="muted">档案级授权：{consentText(drawerContact.consent_status)} · 创建于 {humanTime(drawerContact.created_at)}</p>
             <h3>最近跟进</h3>
             {drawerFollowups.length === 0 ? (
               <p className="muted">暂无跟进记录。跟进在完整档案页追加。</p>
@@ -362,7 +415,7 @@ export default function ContactsPage() {
                 {drawerFollowups.slice(0, 5).map((f) => (
                   <li key={f.id}>
                     <p>{f.note}</p>
-                    <p className="muted">{f.created_at} · 成员 {f.member_id}</p>
+                    <p className="muted">{humanTime(f.created_at)} · {memberDisplayLabel(undefined, f.member_id)}</p>
                   </li>
                 ))}
               </ol>
@@ -372,7 +425,7 @@ export default function ContactsPage() {
         ) : null}
       </DetailDrawer>
 
-      <p>
+      <p className="muted foot-nav">
         <Link href="/">返回首页</Link> · <Link href="/opportunities">商机管理</Link>
       </p>
     </main>

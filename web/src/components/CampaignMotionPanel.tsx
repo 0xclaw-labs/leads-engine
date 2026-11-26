@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +65,7 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
   const [productionMeta, setProductionMeta] = useState({ model_calls: 0, channel_count: 0, model_cost_minor: null as number | null, payer_kind: "" });
   const [allowedTemplates, setAllowedTemplates] = useState<string[]>([]);
   const [preference, setPreference] = useState("");
+  const loadGen = useRef({ seq: 0, tenant: "" });
   const view = presentCampaignMotion({ channels: channels.split(/[\s,，、]+/).filter(Boolean) });
   const production = presentCampaignProduction({
     campaign_id: campaignId,
@@ -92,10 +93,14 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
   }, []);
 
   const load = useCallback(async () => {
-    if (!campaignId || !scope.tenant) return;
-    const init = scopeInit(scope.tenant);
+    const tenant = scope.tenant ?? "";
+    const ticket = { seq: loadGen.current.seq + 1, tenant };
+    loadGen.current = ticket;
+    if (!campaignId || !tenant) return;
+    const init = scopeInit(tenant);
     try {
       const capRes = await fetch("/api/campaign-motion/capability", init);
+      if (loadGen.current !== ticket) return;
       // HUI-2626 盲评 P2①：capability 关闭时是 200+enabled:false，据此隐藏；
       // 404 兜底保留（旧服务端契约）。不再让探测打进 console。
       if (capRes.status === 404) {
@@ -103,6 +108,7 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
         return;
       }
       const cap = (await capRes.json().catch(() => null)) as MotionCapability | null;
+      if (loadGen.current !== ticket) return;
       if (cap && cap.enabled === false) {
         setHidden(true);
         return;
@@ -115,16 +121,19 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
           : [],
       );
       const res = await fetch(`/api/campaigns/${campaignId}/motion-handoff`, init);
+      if (loadGen.current !== ticket) return;
       if (res.status === 404) {
         setMessage("当前线索不是活动。这一步只交出活动事实。");
         return;
       }
       if (!res.ok) {
         const errBody = (await res.json().catch(() => null)) as MotionResponse | null;
+        if (loadGen.current !== ticket) return;
         setMessage(failureText(errBody, res.status));
         return;
       }
       const body = (await res.json()) as MotionResponse;
+      if (loadGen.current !== ticket) return;
       setQueueView(body.job_queue_view);
       setHumanPending(body.human_followup_pending === true);
       setProductionMeta({
@@ -135,14 +144,22 @@ export function CampaignMotionPanel({ campaignId }: { campaignId: string }) {
       });
       applyExport(body.export);
     } catch (e) {
+      if (loadGen.current !== ticket) return;
       setMessage(productError(e instanceof Error ? e.message : "活动动效加载失败"));
       setHidden(false);
     }
   }, [applyExport, campaignId, scope.tenant]);
 
   useEffect(() => {
+    setHidden(true);
+    setRecorded(false);
+    setMessage("");
+    setQueueView(undefined);
+    setHumanPending(false);
+    setAllowedTemplates([]);
+    setPreference("");
     void load();
-  }, [load]);
+  }, [load, scope.epoch]);
 
   if (hidden) return null;
 
