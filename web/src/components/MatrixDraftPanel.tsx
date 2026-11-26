@@ -4,7 +4,7 @@
 // 本地引用；回查 = 经 BFF 读真实服务的 receipt。草稿不是发布：面板对没拿到
 // 的事实显示"—"，绝不显示完成态。返回路径固定回本活动页。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,6 +46,7 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
   const [refID, setRefID] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const loadGen = useRef({ seq: 0, tenant: "" });
 
   const applyRow = useCallback((row: DraftResponse) => {
     setView(presentMatrixDraftRow(row));
@@ -53,29 +54,34 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
   }, []);
 
   const load = useCallback(async () => {
-    if (!campaignId || !scope.tenant) return;
+    const tenant = scope.tenant ?? "";
+    const ticket = { seq: loadGen.current.seq + 1, tenant };
+    loadGen.current = ticket;
+    if (!campaignId || !tenant) return;
     try {
-      const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts`, scopeInit(scope.tenant));
-      if (res.status === 404) {
-        setHidden(true);
-        return;
-      }
-      if (!res.ok) {
+      const res = await fetch(`/api/campaigns/${campaignId}/matrix-drafts`, scopeInit(tenant));
+      if (loadGen.current !== ticket) return;
+      if (res.status === 404 || !res.ok) {
         setHidden(true);
         return;
       }
       setHidden(false);
       const body = (await res.json().catch(() => null)) as ListResponse | null;
+      if (loadGen.current !== ticket) return;
       const row = body?.drafts?.[0];
       if (row) applyRow(row);
     } catch {
-      setHidden(true);
+      if (loadGen.current === ticket) setHidden(true);
     }
   }, [applyRow, campaignId, scope.tenant]);
 
   useEffect(() => {
+    setHidden(true);
+    setView(null);
+    setRefID("");
+    setMessage("");
     void load();
-  }, [load]);
+  }, [load, scope.epoch]);
 
   if (hidden) return null;
 
@@ -221,11 +227,11 @@ export function MatrixDraftPanel({ campaignId }: { campaignId: string }) {
             </TableRow>
             <TableRow>
               <TableHead>发布标记</TableHead>
-              <TableCell>{view.published ? "true" : "false"}</TableCell>
+              <TableCell>{view.published ? "是" : "否"}</TableCell>
             </TableRow>
             <TableRow>
               <TableHead>扣费标记</TableHead>
-              <TableCell>{view.charged ? "true" : "false"}</TableCell>
+              <TableCell>{view.charged ? "是" : "否"}</TableCell>
             </TableRow>
             <TableRow>
               <TableHead>资产来源声明</TableHead>

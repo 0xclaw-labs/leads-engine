@@ -152,8 +152,8 @@ export default function OpportunitiesPage() {
   };
 
   return (
-    <main data-page="opportunities">
-      <header className="page-head">
+    <main data-page="opportunities" data-pattern="list">
+      <header className="page-head" data-region="header">
         <h1>商机管理</h1>
         <Button size="sm" data-page-primary="true" asChild>
           <Link href={items && items[0] ? `/opportunities/${items[0].id}` : "/opportunities"}>
@@ -178,7 +178,16 @@ export default function OpportunitiesPage() {
         />
       </div>
 
-      {error ? <SurfaceState kind="error" title="商机没有载入" detail={error} /> : null}
+      {error ? (
+        <div data-state="error" data-region="error">
+          <SurfaceState
+            kind="error"
+            title="商机没有载入"
+            detail={error}
+            action={<Button variant="secondary" type="button" size="sm" onClick={() => void load(category)}>重试</Button>}
+          />
+        </div>
+      ) : null}
 
       {stats ? <p className="muted">{statsLine(stats)}</p> : null}
       {stats ? (
@@ -197,8 +206,10 @@ export default function OpportunitiesPage() {
           <RecordListSkeleton rows={3} />
         </div>
       ) : null}
-      {items !== null && items.length === 0 ? (
-        <SurfaceState kind="empty" title="这个类别还没有商机" detail="看不到别人名下的商机。换一个类别再看。" />
+      {items !== null && items.length === 0 && !error ? (
+        <div data-state="empty" data-region="empty">
+          <SurfaceState kind="empty" title="这个类别还没有商机" detail="看不到别人名下的商机。换一个类别再看。" />
+        </div>
       ) : null}
       {items && items.length > 0 ? (
         <RecordList
@@ -221,7 +232,14 @@ export default function OpportunitiesPage() {
         width={width}
         footer={drawerId ? <Button variant="outline" size="sm" asChild><Link href={`/opportunities/${drawerId}`}>打开完整商机</Link></Button> : null}
       >
-        {drawerErr ? <SurfaceState kind="error" title="商机没有打开" detail={drawerErr} /> : null}
+        {drawerErr ? (
+          <SurfaceState
+            kind="error"
+            title="商机没有打开"
+            detail={drawerErr}
+            action={drawerId ? <Button variant="secondary" type="button" size="sm" onClick={() => openDrawer(drawerId)}>重试</Button> : null}
+          />
+        ) : null}
         {!drawerErr && !drawerBody && drawerBusy ? (
           <SurfaceState kind="loading" title="正在打开商机" detail="阶段、金额和下一步马上就位。" />
         ) : null}
@@ -240,7 +258,7 @@ export default function OpportunitiesPage() {
         ) : null}
       </DetailDrawer>
 
-      <p>
+      <p className="muted foot-nav">
         <Link href="/">返回首页</Link>
         {!isBusinessCategory(category) ? " (类别未知)" : ""}
       </p>

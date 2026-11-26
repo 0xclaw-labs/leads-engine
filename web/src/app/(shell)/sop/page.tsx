@@ -42,6 +42,17 @@ const CHANNEL_CHOICES = [
   { value: "wecom", label: "企微" },
 ] as const;
 
+const CHANNEL_TEXT: Record<string, string> = {
+  sms: "短信",
+  email: "邮件",
+  wecom: "企微",
+};
+
+const PURPOSE_TEXT: Record<string, string> = {
+  follow_up: "跟进",
+  marketing: "营销",
+};
+
 export default function SOPPage() {
   const scope = useCrmScope();
   const tenant = scope.tenant ?? "";
@@ -282,7 +293,16 @@ export default function SOPPage() {
         ) : (
           <p className="muted">选择客户并填写内容后，这里可以记下内部提醒。</p>
         )}
-        {error ? <SurfaceState kind="error" title="跟进没有记下" detail={error} /> : null}
+        {error ? (
+          <div data-state="error" data-region="error">
+            <SurfaceState
+              kind="error"
+              title="跟进没有记下"
+              detail={error}
+              action={<Button variant="secondary" type="button" size="sm" onClick={() => void load(tenant, ++loadSeq.current)}>重试</Button>}
+            />
+          </div>
+        ) : null}
       </div>
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>人工确认</h2>
@@ -307,11 +327,15 @@ export default function SOPPage() {
             <LineListSkeleton rows={3} />
           </div>
         ) : null}
-        {items?.length === 0 ? <SurfaceState kind="empty" title="还没有提醒或草稿" detail="记下内部提醒后会出现在这里。" /> : null}
+        {items?.length === 0 ? (
+          <div data-state="empty" data-region="empty">
+            <SurfaceState kind="empty" title="还没有提醒或草稿" detail="记下内部提醒后会出现在这里。" />
+          </div>
+        ) : null}
         <ul>
           {items?.map((item) => (
             <li key={item.id}>
-              {recordLabel(item.kind, item.delivered ? "delivered" : item.status)} · {item.channel} · {item.purpose}
+              {recordLabel(item.kind, item.delivered ? "delivered" : item.status)} · {CHANNEL_TEXT[item.channel] ?? item.channel} · {PURPOSE_TEXT[item.purpose] ?? item.purpose}
               {item.body ? ` · ${item.body}` : ""}
               {item.kind === "pending_draft" ? (
                 <>

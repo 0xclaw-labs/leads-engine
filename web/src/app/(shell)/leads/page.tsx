@@ -3,12 +3,16 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { RecordList, RecordListSkeleton, SurfaceState, useShellWidth } from "@/components/workbench/chrome";
+import { DateTimeField } from "@/components/workbench/dateTimeField";
 import { DetailDrawer } from "@/components/workbench/detailDrawer";
-import { SegmentedControl } from "@/vendor/painuo/react/v1/src/index";
+import { Button as PainuoButton, SegmentedControl, Textarea } from "@/vendor/painuo/react/v1/src/index";
 import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
+import { postJson } from "@/lib/fetchJson";
 import { leadRowFacts } from "@/lib/finish";
-import { deskState, sourceText, type StatusFacts } from "@/lib/workbench";
+import { eventLine, humanTime } from "@/lib/humanize";
+import { persistListMemory, readListMemory, recallListState, rememberListState } from "@/lib/listMemory";
+import { NARROW_ACTIONS, deskState, sourceText, type StatusFacts } from "@/lib/workbench";
 import { MISSING_SCOPE, acceptLeadRows, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
 
 // 原生线索页（HUI-1680）。只打本站 BFF。租户由工作区选择，服务端再校验成员身份。
@@ -57,15 +61,6 @@ const STATUS_FILTERS = [
   { value: "filtered", label: "已过滤" },
 ];
 
-const EVENT_KIND: Record<string, string> = {
-  source: "来源",
-  assignment: "分配",
-  follow_up: "跟进",
-  opportunity: "商机",
-  consent: "授权",
-  system: "系统",
-};
-
 export default function LeadsPage() {
   const scope = useCrmScope();
   const width = useShellWidth();
@@ -74,27 +69,64 @@ export default function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [reload, setReload] = useState(0);
   const gen = useRef({ seq: 0, tenant: "" });
+  const shownTenant = useRef<string | null>(null);
+  const pendingScrollY = useRef<number | null>(null);
 
-  // 详情抽屉（真实 timeline + 票号：切范围/迟到响应一律丢弃）。
+  // 详情抽屉（真实 timeline + 票号：切范围/迟到响应一律丢弃；抽屉内记跟进失败保留输入）。
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [drawerTitle, setDrawerTitle] = useState("");
   const [drawerBody, setDrawerBody] = useState<DrawerTimeline | null>(null);
   const [drawerBusy, setDrawerBusy] = useState(false);
   const [drawerErr, setDrawerErr] = useState("");
+  const [drawerNote, setDrawerNote] = useState("");
+  const [drawerNextAt, setDrawerNextAt] = useState("");
+  const [drawerSaving, setDrawerSaving] = useState(false);
+  const [drawerMsg, setDrawerMsg] = useState("");
   const drawerGen = useRef({ seq: 0, tenant: "" });
+
+  // 只有切换工作范围时重置筛选与抽屉，并按租户恢复列表记忆（切租户绝不串状态）。
+  useEffect(() => {
+    const tenant = scope.tenant ?? "";
+    if (shownTenant.current === tenant) return;
+    shownTenant.current = tenant;
+    const restored = recallListState(readListMemory(), tenant, "leads");
+    setStatusFilter(restored.filter || "all");
+    pendingScrollY.current = typeof restored.scrollY === "number" ? restored.scrollY : null;
+    setDrawerId(null);
+    setDrawerBody(null);
+    setDrawerErr("");
+    setDrawerNote("");
+    setDrawerNextAt("");
+    setDrawerMsg("");
+    setRows(tenant ? null : []);
+  }, [scope.tenant]);
+
+  // 记住当前租户的筛选与滚动，返回列表时恢复原位。
+  const saveListPosition = (nextFilter = statusFilter) => {
+    const tenant = scope.tenant ?? "";
+    if (!tenant) return;
+    const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
+    persistListMemory(rememberListState(readListMemory(), tenant, "leads", { filter: nextFilter, scrollY }));
+  };
+
+  useEffect(() => {
+    if (rows === null || pendingScrollY.current === null) return;
+    const targetY = pendingScrollY.current;
+    pendingScrollY.current = null;
+    if (targetY > 0 && typeof window !== "undefined") {
+      window.scrollTo(0, targetY);
+    }
+  }, [rows]);
 
   useEffect(() => {
     const tenant = scope.tenant ?? "";
     const ticket = { seq: gen.current.seq + 1, tenant: tenant };
     gen.current = ticket;
     setError("");
-    setStatusFilter("all");
-    setDrawerId(null);
     if (!tenant) {
       setRows([]);
       return;
     }
-    setRows(null);
     let cancelled = false;
     void (async () => {
       const headers = listTenantHeader(tenant);
@@ -130,13 +162,10 @@ export default function LeadsPage() {
     };
   }, [scope.epoch, scope.tenant, reload]);
 
-  const openDrawer = (id: string) => {
+  const loadDrawerTimeline = (id: string) => {
     const tenant = scope.tenant ?? "";
     const ticket = { seq: drawerGen.current.seq + 1, tenant };
     drawerGen.current = ticket;
-    setDrawerId(id);
-    setDrawerTitle(rows?.find((r) => r.id === id)?.name || "线索详情");
-    setDrawerBody(null);
     setDrawerErr("");
     setDrawerBusy(true);
     void (async () => {
@@ -157,11 +186,61 @@ export default function LeadsPage() {
     })();
   };
 
+  const openDrawer = (id: string) => {
+    saveListPosition();
+    setDrawerId(id);
+    setDrawerTitle(rows?.find((r) => r.id === id)?.name || "线索详情");
+    setDrawerBody(null);
+    setDrawerNote("");
+    setDrawerNextAt("");
+    setDrawerMsg("");
+    loadDrawerTimeline(id);
+  };
+
   const closeDrawer = () => {
     drawerGen.current = { seq: drawerGen.current.seq + 1, tenant: scope.tenant ?? "" };
     setDrawerId(null);
     setDrawerBody(null);
     setDrawerErr("");
+    setDrawerNote("");
+    setDrawerNextAt("");
+    setDrawerMsg("");
+  };
+
+  const submitDrawerFollow = async (mode: "note" | "schedule") => {
+    const tenant = scope.tenant ?? "";
+    const headers = listTenantHeader(tenant);
+    if (!headers || !drawerId || drawerSaving) return;
+    const note = drawerNote.trim();
+    if (!note) return;
+    if (mode === "schedule" && !drawerNextAt) return;
+    setDrawerSaving(true);
+    setDrawerMsg("");
+    const payload: Record<string, unknown> = { note, complete: true };
+    if (drawerNextAt) {
+      payload.next_follow_up_at = new Date(drawerNextAt).toISOString().replace(/\.\d{3}Z$/, "Z");
+    }
+    try {
+      const out = await postJson<{ next?: { label?: string } }>(
+        `/api/leads/${drawerId}/follow-through`,
+        { "content-type": "application/json", ...headers },
+        payload,
+      );
+      if (!out.ok) {
+        // 失败保留用户输入，不清空 drawerNote/drawerNextAt。
+        setDrawerMsg(failureText(out.body, out.status));
+        return;
+      }
+      setDrawerNote("");
+      setDrawerNextAt("");
+      setDrawerMsg(out.body.next?.label ?? "已记下跟进");
+      loadDrawerTimeline(drawerId);
+      setReload((n) => n + 1);
+    } catch (e) {
+      setDrawerMsg(productError((e as Error).message));
+    } finally {
+      setDrawerSaving(false);
+    }
   };
 
   const visibleRows = (rows ?? []).filter((row) => statusFilter === "all" || row.status === statusFilter);
@@ -211,7 +290,11 @@ export default function LeadsPage() {
               label="状态筛选（当前范围全部线索）"
               items={STATUS_FILTERS}
               value={statusFilter}
-              onValueChange={(next) => setStatusFilter(next ?? "all")}
+              onValueChange={(next) => {
+                const chosen = next ?? "all";
+                setStatusFilter(chosen);
+                saveListPosition(chosen);
+              }}
             />
             <p className="muted">
               筛选在本范围返回的全部线索上进行，共 {rows.length} 条，当前显示 {visibleRows.length} 条。
@@ -242,11 +325,32 @@ export default function LeadsPage() {
         open={Boolean(drawerId)}
         onClose={closeDrawer}
         title={drawerTitle}
-        busy={drawerBusy}
+        busy={drawerBusy || drawerSaving}
         width={width}
-        footer={drawerId ? <Button variant="outline" size="sm" asChild><Link href={`/leads/${drawerId}`}>打开完整线索</Link></Button> : null}
+        footer={
+          drawerId ? (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/leads/${drawerId}`} onClick={() => saveListPosition()}>
+                打开完整线索
+              </Link>
+            </Button>
+          ) : null
+        }
       >
-        {drawerErr ? <SurfaceState kind="error" title="线索没有打开" detail={drawerErr} /> : null}
+        {drawerErr ? (
+          <SurfaceState
+            kind="error"
+            title="线索没有打开"
+            detail={drawerErr}
+            action={
+              drawerId ? (
+                <PainuoButton variant="secondary" type="button" size="sm" onClick={() => loadDrawerTimeline(drawerId)}>
+                  重试
+                </PainuoButton>
+              ) : null
+            }
+          />
+        ) : null}
         {!drawerErr && !drawerBody && drawerBusy ? (
           <SurfaceState kind="loading" title="正在打开线索" detail="来源、负责人和下一步马上就位。" />
         ) : null}
@@ -272,19 +376,50 @@ export default function LeadsPage() {
             </ul>
             <h2>最近动态</h2>
             {(drawerBody.events ?? []).length === 0 ? (
-              <p className="muted">还没有记录。跟进步骤在完整线索页进行。</p>
+              <SurfaceState kind="empty" title="还没有记录" detail="在下方记一次跟进后，时间线会出现在这里。" />
             ) : (
               <ol className="desk-list">
                 {(drawerBody.events ?? []).slice(0, 5).map((event, index) => (
                   <li key={`${event.kind}-${event.at}-${index}`}>
-                    <p>{EVENT_KIND[event.kind] ?? event.kind} · {event.summary}</p>
-                    <p className="muted">{event.at}</p>
+                    <p>{eventLine(event.kind, event.summary)}</p>
+                    <p className="muted">{humanTime(event.at)}</p>
                   </li>
                 ))}
               </ol>
             )}
+            <div className="stack-form" data-drawer-followup="true">
+              <h2>快速记跟进</h2>
+              <Textarea
+                label="跟进记录"
+                value={drawerNote}
+                onChange={(e) => setDrawerNote(e.target.value)}
+                placeholder="这次跟进了什么（提交失败会保留你的输入）"
+              />
+              <DateTimeField label="下一次（北京时间）" value={drawerNextAt} onChange={setDrawerNextAt} />
+              <div className="queue-actions">
+                <PainuoButton
+                  variant="secondary"
+                  type="button"
+                  size="sm"
+                  disabled={drawerSaving || !drawerNote.trim()}
+                  onClick={() => void submitDrawerFollow("note")}
+                >
+                  {drawerSaving ? "提交中…" : NARROW_ACTIONS[1]}
+                </PainuoButton>
+                <PainuoButton
+                  variant="secondary"
+                  type="button"
+                  size="sm"
+                  disabled={drawerSaving || !drawerNote.trim() || !drawerNextAt}
+                  onClick={() => void submitDrawerFollow("schedule")}
+                >
+                  {NARROW_ACTIONS[2]}
+                </PainuoButton>
+              </div>
+              {drawerMsg ? <p className="muted" role="status">{drawerMsg}</p> : null}
+            </div>
             <p className="muted">
-              当前状态:{deskState(drawerBody.statuses, undefined)}。跟进与安排下一步在完整线索页操作。
+              当前状态：{deskState(drawerBody.statuses, undefined)}。关闭抽屉会回到当前筛选与滚动位置。
             </p>
           </>
         ) : null}

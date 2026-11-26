@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ToneBadge } from "@/components/workbench/chrome";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { scopeInit } from "@/lib/eco-nav/use-crm-scope";
+import { MISSING_SCOPE, failureText } from "@/lib/productShell";
 import {
   modelStatusText,
   originLabel,
@@ -78,24 +80,32 @@ export function IntentOnOpportunity({
   const [grade, setGrade] = useState("low");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const loadGen = useRef({ seq: 0, tenant: "" });
 
   const load = useCallback(async () => {
+    const activeTenant = tenant ?? "";
+    const ticket = { seq: loadGen.current.seq + 1, tenant: activeTenant };
+    loadGen.current = ticket;
     if (!contactId) {
       setNote("这个商机没有关联联系人，不编造级别。");
       setLeads([]);
+      setRows({});
       return;
     }
-    if (!tenant) {
-      setNote("先选择租户，再查看同一联系人的线索。");
+    if (!activeTenant) {
+      setNote(MISSING_SCOPE);
       setLeads([]);
+      setRows({});
       return;
     }
     try {
-      const res = await fetch("/api/leads", scopeInit(tenant));
+      const res = await fetch("/api/leads", scopeInit(activeTenant));
       const body = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!res.ok) {
-        setNote(body.message ?? "线索列表没有读到");
+        setNote(failureText(body, res.status));
         setLeads([]);
+        setRows({});
         return;
       }
       const matched = ((body.items ?? []) as LeadRow[]).filter((item) => item.contact_id === contactId);
@@ -110,23 +120,30 @@ export function IntentOnOpportunity({
       for (const lead of matched) {
         const current = await fetch(
           `/api/intent-grades/current?subject_kind=lead&subject_id=${encodeURIComponent(lead.id)}`,
-          scopeInit(tenant),
+          scopeInit(activeTenant),
         );
+        if (loadGen.current !== ticket) return;
         next[lead.id] = current.ok ? ((await current.json()) as GradeSnapshot) : null;
       }
+      if (loadGen.current !== ticket) return;
       setRows(next);
     } catch {
+      if (loadGen.current !== ticket) return;
       setNote("线索列表没有读到，请检查网络后重试。");
       setLeads([]);
     }
   }, [contactId, tenant]);
 
   useEffect(() => {
+    setLeads([]);
+    setRows({});
+    setNote("");
     void load();
   }, [load]);
 
   const score = async (leadId: string) => {
     if (!tenant) return;
+    const ticket = loadGen.current;
     setBusy(true);
     try {
       const evidenceText = (text[leadId] ?? "").trim();
@@ -143,16 +160,17 @@ export function IntentOnOpportunity({
         }),
       );
       const body = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!res.ok) {
-        setNote(body.message ?? body.error ?? "评估没有完成");
+        setNote(failureText(body, res.status));
         return;
       }
       setNote("");
       await load();
     } catch {
-      setNote("评估没有完成，请检查网络后重试。");
+      if (loadGen.current === ticket) setNote("评估没有完成，请检查网络后重试。");
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   };
 
@@ -163,6 +181,7 @@ export function IntentOnOpportunity({
       setNote("修正要写下原因");
       return;
     }
+    const ticket = loadGen.current;
     setBusy(true);
     try {
       const res = await fetch(
@@ -180,32 +199,36 @@ export function IntentOnOpportunity({
         }),
       );
       const body = await res.json().catch(() => ({}));
+      if (loadGen.current !== ticket) return;
       if (!res.ok) {
-        setNote(body.message ?? body.error ?? "修正没有保存");
+        setNote(failureText(body, res.status));
         return;
       }
       setNote("");
       await load();
     } catch {
-      setNote("修正没有保存，请检查网络后重试。");
+      if (loadGen.current === ticket) setNote("修正没有保存，请检查网络后重试。");
     } finally {
-      setBusy(false);
+      if (loadGen.current === ticket) setBusy(false);
     }
   };
 
   return (
     <section>
       <h2>意向分级</h2>
-      <p>{modelStatusText()}</p>
+      <p data-tone="ai">{modelStatusText()}</p>
       <p className="muted">级别只有高、中、低、信息不足。下一步只是建议。</p>
       {note ? <p className="muted">{note}</p> : null}
-      {leads.map((lead) => {
+      {leads.map((lead, index) => {
         const snap = rows[lead.id];
         const view = snap?.grade ? presentAssessment(asInput(snap)) : null;
         const buttons = outreachButtons(snap?.permissions);
         return (
           <div key={lead.id} className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
-            <p>线索 {lead.id}</p>
+            <p className="flex items-center gap-2">
+              <ToneBadge tone={view?.humanLocked ? "human" : "ai"} />
+              <strong>关联线索 #{index + 1}</strong>
+            </p>
             {view ? (
               <>
                 <p>

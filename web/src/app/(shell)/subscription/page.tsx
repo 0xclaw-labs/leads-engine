@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { SurfaceState } from "@/components/workbench/chrome";
+import { LineListSkeleton, SurfaceState } from "@/components/workbench/chrome";
 import { Button } from "@/components/ui/button";
 import { useCrmScope } from "@/lib/eco-nav/use-crm-scope";
 import { MISSING_SCOPE, failureText, listTenantHeader, pagePrimary, productError } from "@/lib/productShell";
@@ -25,9 +25,11 @@ interface SubscriptionResponse extends SubscriptionFacts {
 export default function SubscriptionPage() {
   const scope = useCrmScope();
   const [reload, setReload] = useState(0);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [facts, setFacts] = useState<SubscriptionFacts>({ status: "unconfigured" });
   const [err, setErr] = useState("");
-  const view = presentSubscription(facts);
+  const currentFacts = loadedFor === (scope.tenant ?? "") ? facts : { status: "unconfigured" };
+  const view = presentSubscription(currentFacts);
   const back = rechargeReturn({
     reason: view.advancedLimited ? "quote_stale" : undefined,
     billing_center: "billing_center",
@@ -36,16 +38,23 @@ export default function SubscriptionPage() {
   });
 
   useEffect(() => {
-    if (!scope.tenant) return;
+    setErr("");
+    setLoadedFor(null);
+    setFacts({ status: "unconfigured" });
+    if (!scope.tenant) {
+      setLoadedFor("");
+      return;
+    }
     const tenant = scope.tenant;
     let cancelled = false;
     fetch("/api/subscription", { headers: listTenantHeader(tenant) ?? {} })
       .then(async (res) => {
-        const body = (await res.json()) as SubscriptionResponse;
+        const body = (await res.json().catch(() => ({}))) as SubscriptionResponse;
         if (cancelled) return;
         if (!res.ok) {
           setErr(failureText(body, res.status));
           setFacts({ status: "unconfigured" });
+          setLoadedFor(tenant);
           return;
         }
         setErr("");
@@ -58,21 +67,27 @@ export default function SubscriptionPage() {
           history_retained: body.history_retained,
           data_lost: body.data_lost,
         });
+        setLoadedFor(tenant);
       })
       .catch((e: Error) => {
-        if (!cancelled) setErr(productError(e.message));
+        if (!cancelled) {
+          setErr(productError(e.message));
+          setLoadedFor(tenant);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [scope.epoch, scope.tenant, reload]);
 
+  const loading = Boolean(scope.tenant) && loadedFor !== scope.tenant && !err;
+
   return (
     <main data-page="billing">
       <header className="page-head">
         <h1>订阅与用量</h1>
-        <Button size="sm" type="button" data-page-primary="true" disabled={!scope.tenant} onClick={() => setReload((n) => n + 1)}>
-          {pagePrimary("billing")}
+        <Button size="sm" type="button" data-page-primary="true" disabled={!scope.tenant || loading} onClick={() => setReload((n) => n + 1)}>
+          {loading ? "读取中…" : pagePrimary("billing")}
         </Button>
       </header>
       <p className="muted">
@@ -81,9 +96,24 @@ export default function SubscriptionPage() {
         </Button>
       </p>
       {!scope.tenant ? <SurfaceState kind="recovery" title="还没有工作范围" detail={MISSING_SCOPE} /> : null}
+      {loading ? (
+        <div data-state="loading" data-region="loading">
+          <SurfaceState kind="loading" title="正在读取订阅与用量" detail="三本账和套餐状态马上就位。" />
+          <LineListSkeleton rows={3} />
+        </div>
+      ) : null}
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <p data-tone="automation">钱包余额不代表 CRM 套餐已开通。商家成交额不进入平台钱包。这里不会扣款、外呼或发消息。</p>
-        {err ? <SurfaceState kind="error" title="用量没有载入" detail={err} /> : null}
+        {err ? (
+          <div data-state="error" data-region="error">
+            <SurfaceState
+              kind="error"
+              title="用量没有载入"
+              detail={err}
+              action={<Button variant="secondary" type="button" size="sm" onClick={() => setReload((n) => n + 1)}>重试</Button>}
+            />
+          </div>
+        ) : null}
       </div>
       <div className="bg-card text-card-foreground border border-border rounded-[10px] p-5 mb-4">
         <h2>三本账分开</h2>
