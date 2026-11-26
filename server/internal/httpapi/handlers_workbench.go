@@ -9,8 +9,15 @@ import (
 
 	"github.com/bianjiefilm/leads-engine/server/internal/authz"
 	"github.com/bianjiefilm/leads-engine/server/internal/store"
+	"github.com/bianjiefilm/leads-engine/server/internal/todaynext"
 	"github.com/bianjiefilm/leads-engine/server/internal/workbench"
 )
+
+type workbenchResponse struct {
+	workbench.Result
+	TodayQueue       []todaynext.WorkItem             `json:"today_queue"`
+	FrictionBaseline todaynext.FrictionBaselineRecord `json:"friction_baseline"`
+}
 
 func deskScope(c *caller) workbench.Scope {
 	return workbench.Scope{Role: c.Member.Role, MemberID: c.Member.ID}
@@ -26,7 +33,12 @@ func (s *Server) handleWorkbench(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "internal", "workbench lookup failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, workbench.BuildWithDrafts(deskScope(c), time.Now().UTC(), facts.Leads, facts.Opps, facts.Desk, facts.Drafts))
+	res := workbench.BuildWithDrafts(deskScope(c), time.Now().UTC(), facts.Leads, facts.Opps, facts.Desk, facts.Drafts)
+	writeJSON(w, http.StatusOK, workbenchResponse{
+		Result:           res,
+		TodayQueue:       todaynext.ProjectFromWorkbench(res, facts.Leads),
+		FrictionBaseline: todaynext.NewUnmeasuredFrictionBaseline("HUI-2598"),
+	})
 }
 
 func (s *Server) handleLeadTimeline(w http.ResponseWriter, r *http.Request) {
@@ -64,20 +76,33 @@ func (s *Server) handleLeadTimeline(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLeadFollowThrough(w http.ResponseWriter, r *http.Request) {
 	c := callerFrom(r)
-	rec, ok := s.leadRecord(w, r, c, authz.ActionUpdate)
-	if !ok {
-		return
-	}
 	var in struct {
-		Note              string  `json:"note"`
-		NextFollowUpAt    *string `json:"next_follow_up_at"`
-		Complete          bool    `json:"complete"`
-		Channel           string  `json:"channel"`
-		AIScore           int     `json:"ai_score"`
-		CreateOpportunity bool    `json:"create_opportunity"`
-		Disposition       string  `json:"disposition"`
+		Note                     string  `json:"note"`
+		NextFollowUpAt           *string `json:"next_follow_up_at"`
+		Complete                 bool    `json:"complete"`
+		Channel                  string  `json:"channel"`
+		AIScore                  int     `json:"ai_score"`
+		CreateOpportunity        bool    `json:"create_opportunity"`
+		Disposition              string  `json:"disposition"`
+		IdempotencyKey           string  `json:"idempotency_key"`
+		ExpectedAssigneeMemberID string  `json:"expected_assignee_member_id"`
+		TenantID                 string  `json:"tenant_id"`
+		BrandID                  string  `json:"brand_id"`
+		SourceTag                string  `json:"source_tag"`
+		CampaignID               string  `json:"campaign_id"`
+		AutoOutreach             bool    `json:"auto_outreach"`
+		AutoCall                 bool    `json:"auto_call"`
+		TriggerSOP               bool    `json:"trigger_sop"`
+		ClaimAutoOutreachSuccess bool    `json:"claim_auto_outreach_success"`
 	}
 	if !decodeBody(w, r, &in) {
+		return
+	}
+	if !s.bindWriteTenant(w, c, in.TenantID, in.BrandID, in.SourceTag, in.CampaignID) {
+		return
+	}
+	rec, ok := s.leadRecord(w, r, c, authz.ActionUpdate)
+	if !ok {
 		return
 	}
 	facts, err := s.St.LoadDeskFacts(c.Member.TenantID)
@@ -91,12 +116,60 @@ func (s *Server) handleLeadFollowThrough(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if in.CreateOpportunity {
-		if workbench.RefuseSalesPush(lead.Purpose) {
+		if todaynext.IsNonSalesPurpose(lead.Purpose) {
 			fail(w, http.StatusConflict, "refused_sales_push", "售后、咨询或拒绝营销不能被推进成销售商机")
 			return
 		}
 		fail(w, http.StatusBadRequest, "not_automatic", "工作台不创建商机，也不因分数自动触达")
 		return
+	}
+	consentRevoked := strings.EqualFold(strings.TrimSpace(lead.ConsentStatus), "revoked") ||
+		strings.EqualFold(strings.TrimSpace(lead.ConsentStatus), "denied")
+	if !consentRevoked {
+		if consents, cErr := s.St.ListContactConsents(c.Member.TenantID, rec.ContactID); cErr == nil {
+			for _, cs := range consents {
+				if cs.Status() == "revoked" {
+					consentRevoked = true
+					break
+				}
+			}
+		}
+	}
+	if in.AutoOutreach || in.AutoCall || in.TriggerSOP || in.ClaimAutoOutreachSuccess {
+		actionType := todaynext.ActionManualFollowUp
+		switch {
+		case in.AutoCall:
+			actionType = todaynext.ActionAutoCall
+		case in.TriggerSOP:
+			actionType = todaynext.ActionAutoSOP
+		case in.AutoOutreach:
+			actionType = todaynext.ActionAutoOutreach
+		}
+		dec := todaynext.ValidateTodayAction(todaynext.TodayActionInput{
+			TenantID:                 c.Member.TenantID,
+			Action:                   actionType,
+			Purpose:                  lead.Purpose,
+			ConsentStatus:            lead.ConsentStatus,
+			MarketingAllowed:         lead.MarketingSMSOrPhone,
+			ConsentRevoked:           consentRevoked,
+			ChannelReplyAllowed:      lead.ChannelReplyAllowed,
+			ChannelIdentity:          lead.ChannelIdentity,
+			SendReceiptStored:        false,
+			ClaimAutoOutreachSuccess: in.ClaimAutoOutreachSuccess,
+			TriggerAutoOutbound:      in.AutoOutreach,
+			TriggerAutoSOP:           in.TriggerSOP,
+			TriggerAutoCall:          in.AutoCall,
+			AIScore:                  in.AIScore,
+		})
+		if !dec.Allowed {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":           dec.Code,
+				"message":         dec.Reason,
+				"violations":      dec.Violations,
+				"outreach_notice": dec.OutreachNotice,
+			})
+			return
+		}
 	}
 	disposition := strings.TrimSpace(in.Disposition)
 	if disposition == "next" {
@@ -129,16 +202,71 @@ func (s *Server) handleLeadFollowThrough(w http.ResponseWriter, r *http.Request)
 		}
 		nextAt = normalized
 	}
-	key := workbench.FollowThroughKey(rec.ID, note, nextAt, channel, in.Complete, c.Member.ID, disposition)
-	if existing, found, err := s.St.FindFollowUpByDedupe(c.Member.TenantID, key); err != nil {
+	explicitIdemKey := strings.TrimSpace(in.IdempotencyKey)
+	if explicitIdemKey == "" {
+		explicitIdemKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	}
+	var dbDedupeKey, guardKey, payloadDigest string
+	if explicitIdemKey != "" {
+		guardKey = explicitIdemKey
+		dbDedupeKey = todaynext.ScopedDedupeKey(c.Member.TenantID, c.Principal.ID, rec.ID, explicitIdemKey)
+		payloadDigest = todaynext.CanonicalPayloadDigest(rec.ID, note, nextAt, channel, disposition)
+	} else {
+		dbDedupeKey = workbench.FollowThroughKey(rec.ID, note, nextAt, channel, in.Complete, c.Member.ID, disposition)
+		guardKey = "content:" + dbDedupeKey
+		payloadDigest = dbDedupeKey
+	}
+	guardDec, lease := s.followUpGuard().Begin(todaynext.MutationContext{
+		TenantID:         c.Member.TenantID,
+		BodyTenantID:     in.TenantID,
+		PrincipalID:      c.Principal.ID,
+		MemberID:         c.Member.ID,
+		MemberRole:       c.Member.Role,
+		MemberEnabled:    c.Member.Enabled,
+		RecordTenantID:   rec.TenantID,
+		RecordID:         rec.ID,
+		RecordAssigneeID: rec.AssignedMemberID,
+		ExpectedOwnerID:  in.ExpectedAssigneeMemberID,
+		IdempotencyKey:   guardKey,
+		PayloadDigest:    payloadDigest,
+		ViewSource:       "today",
+	})
+	if !guardDec.Allowed {
+		fail(w, guardDec.HTTPStatus, guardDec.Code, guardDec.Message)
+		return
+	}
+	if lease != nil {
+		defer lease.Abort()
+	}
+	if guardDec.Replay && guardDec.Cached != nil && guardDec.Cached.FollowUpID != "" {
+		if disposition == "waiting_customer" {
+			if err := s.St.SetFollowUpDisposition(c.Member.TenantID, guardDec.Cached.FollowUpID, disposition); err != nil {
+				fail(w, http.StatusInternalServerError, "internal", "follow-up disposition failed")
+				return
+			}
+		}
+		s.finishFollowThrough(w, c, rec, guardDec.Cached.FollowUpID, true, nextAt, channel, in.AIScore)
+		return
+	}
+	if existing, found, err := s.St.FindFollowUpByDedupe(c.Member.TenantID, dbDedupeKey); err != nil {
 		fail(w, http.StatusInternalServerError, "internal", "follow-up lookup failed")
 		return
 	} else if found {
+		if explicitIdemKey != "" && (existing.Note != note || existing.NextFollowUpAt != nextAt) {
+			fail(w, http.StatusConflict, "idempotency_conflict", "idempotency_key was already used with a different follow-up payload")
+			return
+		}
 		if disposition == "waiting_customer" {
 			if err := s.St.SetFollowUpDisposition(c.Member.TenantID, existing.ID, disposition); err != nil {
 				fail(w, http.StatusInternalServerError, "internal", "follow-up disposition failed")
 				return
 			}
+		}
+		if lease != nil {
+			lease.Commit(todaynext.CachedWriteResult{
+				FollowUpID:    existing.ID,
+				PayloadDigest: payloadDigest,
+			})
 		}
 		s.finishFollowThrough(w, c, rec, existing.ID, true, nextAt, channel, in.AIScore)
 		return
@@ -149,7 +277,7 @@ func (s *Server) handleLeadFollowThrough(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	created, replay, err := s.St.CreateFollowUpOnce(c.Member.TenantID, rec.ContactID, rec.ID, note, nextAt, c.Member.ID, key)
+	created, replay, err := s.St.CreateFollowUpOnce(c.Member.TenantID, rec.ContactID, rec.ID, note, nextAt, c.Member.ID, dbDedupeKey)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "internal", "follow-up create failed")
 		return
@@ -159,6 +287,12 @@ func (s *Server) handleLeadFollowThrough(w http.ResponseWriter, r *http.Request)
 			fail(w, http.StatusInternalServerError, "internal", "follow-up disposition failed")
 			return
 		}
+	}
+	if lease != nil {
+		lease.Commit(todaynext.CachedWriteResult{
+			FollowUpID:    created.ID,
+			PayloadDigest: payloadDigest,
+		})
 	}
 	s.finishFollowThrough(w, c, rec, created.ID, replay, nextAt, channel, in.AIScore)
 }

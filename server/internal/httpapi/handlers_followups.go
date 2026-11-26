@@ -23,6 +23,7 @@ import (
 	"github.com/bianjiefilm/leads-engine/server/internal/authz"
 	"github.com/bianjiefilm/leads-engine/server/internal/redact"
 	"github.com/bianjiefilm/leads-engine/server/internal/store"
+	"github.com/bianjiefilm/leads-engine/server/internal/todaynext"
 )
 
 // followUpNoteMaxRunes caps the note in runes so CJK text is not penalized
@@ -70,14 +71,16 @@ func (s *Server) followUpRecord(w http.ResponseWriter, r *http.Request, c *calle
 func (s *Server) handleFollowUpCreate(w http.ResponseWriter, r *http.Request) {
 	c := callerFrom(r)
 	var in struct {
-		ContactID      string  `json:"contact_id"`
-		LeadID         string  `json:"lead_id"`
-		Note           string  `json:"note"`
-		NextFollowUpAt *string `json:"next_follow_up_at"`
-		TenantID       string  `json:"tenant_id"`
-		BrandID        string  `json:"brand_id"`
-		SourceTag      string  `json:"source_tag"`
-		CampaignID     string  `json:"campaign_id"`
+		ContactID                string  `json:"contact_id"`
+		LeadID                   string  `json:"lead_id"`
+		Note                     string  `json:"note"`
+		NextFollowUpAt           *string `json:"next_follow_up_at"`
+		TenantID                 string  `json:"tenant_id"`
+		BrandID                  string  `json:"brand_id"`
+		SourceTag                string  `json:"source_tag"`
+		CampaignID               string  `json:"campaign_id"`
+		IdempotencyKey           string  `json:"idempotency_key"`
+		ExpectedAssigneeMemberID string  `json:"expected_assignee_member_id"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -106,6 +109,9 @@ func (s *Server) handleFollowUpCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	recordID := in.ContactID
+	recordTenantID := c.Member.TenantID
+	recordAssigneeID := ""
 	if in.LeadID != "" {
 		lead, err := s.St.GetLead(in.LeadID, c.Member.TenantID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -134,6 +140,9 @@ func (s *Server) handleFollowUpCreate(w http.ResponseWriter, r *http.Request) {
 			authz.RecordScope{TenantID: lead.TenantID, AssigneeMemberID: lead.AssignedMemberID}, w) {
 			return
 		}
+		recordID = lead.ID
+		recordTenantID = lead.TenantID
+		recordAssigneeID = lead.AssignedMemberID
 	} else {
 		contact, err := s.St.GetContact(in.ContactID, c.Member.TenantID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -146,6 +155,85 @@ func (s *Server) handleFollowUpCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		if !s.requireAction(c, authz.ActionUpdate,
 			authz.RecordScope{TenantID: contact.TenantID, AssigneeMemberID: contact.AssignedMemberID}, w) {
+			return
+		}
+		recordID = contact.ID
+		recordTenantID = contact.TenantID
+		recordAssigneeID = contact.AssignedMemberID
+	}
+	idemKey := strings.TrimSpace(in.IdempotencyKey)
+	if idemKey == "" {
+		idemKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	}
+	if idemKey != "" || strings.TrimSpace(in.ExpectedAssigneeMemberID) != "" {
+		payloadDigest := todaynext.CanonicalPayloadDigest(recordID, note, next, "", "")
+		guardDec, lease := s.followUpGuard().Begin(todaynext.MutationContext{
+			TenantID:         c.Member.TenantID,
+			BodyTenantID:     in.TenantID,
+			PrincipalID:      c.Principal.ID,
+			MemberID:         c.Member.ID,
+			MemberRole:       c.Member.Role,
+			MemberEnabled:    c.Member.Enabled,
+			RecordTenantID:   recordTenantID,
+			RecordID:         recordID,
+			RecordAssigneeID: recordAssigneeID,
+			ExpectedOwnerID:  in.ExpectedAssigneeMemberID,
+			IdempotencyKey:   idemKey,
+			PayloadDigest:    payloadDigest,
+			ViewSource:       "lead_detail",
+		})
+		if !guardDec.Allowed {
+			fail(w, guardDec.HTTPStatus, guardDec.Code, guardDec.Message)
+			return
+		}
+		if lease != nil {
+			defer lease.Abort()
+		}
+		if idemKey != "" {
+			if guardDec.Replay && guardDec.Cached != nil && guardDec.Cached.FollowUpID != "" {
+				existing, _, err := s.St.GetFollowUp(guardDec.Cached.FollowUpID, c.Member.TenantID)
+				if err == nil {
+					writeJSON(w, http.StatusOK, existing)
+					return
+				}
+			}
+			dbDedupeKey := todaynext.ScopedDedupeKey(c.Member.TenantID, c.Principal.ID, recordID, idemKey)
+			if existing, found, err := s.St.FindFollowUpByDedupe(c.Member.TenantID, dbDedupeKey); err != nil {
+				fail(w, http.StatusInternalServerError, "internal", "follow-up lookup failed")
+				return
+			} else if found {
+				if existing.Note != note || existing.NextFollowUpAt != next {
+					fail(w, http.StatusConflict, "idempotency_conflict", "idempotency_key was already used with a different follow-up payload")
+					return
+				}
+				if lease != nil {
+					lease.Commit(todaynext.CachedWriteResult{
+						FollowUpID:    existing.ID,
+						PayloadDigest: payloadDigest,
+					})
+				}
+				writeJSON(w, http.StatusOK, existing)
+				return
+			}
+			f, replay, err := s.St.CreateFollowUpOnce(c.Member.TenantID, in.ContactID, in.LeadID, note, next, c.Member.ID, dbDedupeKey)
+			if err != nil {
+				fail(w, http.StatusInternalServerError, "internal", "follow-up create failed")
+				return
+			}
+			if lease != nil {
+				lease.Commit(todaynext.CachedWriteResult{
+					FollowUpID:    f.ID,
+					PayloadDigest: payloadDigest,
+				})
+			}
+			status := http.StatusCreated
+			if replay {
+				status = http.StatusOK
+			} else {
+				s.Log.Printf("follow-up created id=%s contact=%s lead=%s author=%s due=%s %s",
+					f.ID, f.ContactID, f.LeadID, c.Member.ID, f.NextFollowUpAt, redact.Note(note))
+			}
+			writeJSON(w, status, f)
 			return
 		}
 	}
