@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/bianjiefilm/leads-engine/server/internal/channelix"
+	"github.com/bianjiefilm/leads-engine/server/internal/receptionguard"
 )
 
 // ChannelGrantIn is an authorized connector binding for one account.
@@ -42,23 +44,28 @@ type ChannelEventIn struct {
 	PhoneMarketingConsent bool   `json:"phone_marketing_consent"`
 	SMSMarketingConsent   bool   `json:"sms_marketing_consent"`
 	WantReply             bool   `json:"want_reply"`
+	ReplySpeaker          string `json:"reply_speaker,omitempty"`
+	ReceptionSessionID    string `json:"reception_session_id,omitempty"`
+	LegacyRoute           bool   `json:"legacy_route,omitempty"`
 	HumanProcessed        bool   `json:"human_processed"`
 }
 
 // ChannelIngestResult is the stored decision. AutoReach and Delivered stay false.
 type ChannelIngestResult struct {
-	Refusal         string
-	InteractionID   string
-	CandidateID     string
-	CandidateStatus string
-	Idempotent      bool
-	AutoReach       bool
-	PhoneMarketing  bool
-	SMSMarketing    bool
-	ReplyAllowed    bool
-	ReplyRefusal    string
-	Delivered       bool
-	Verification    string
+	Refusal               string
+	InteractionID         string
+	CandidateID           string
+	CandidateStatus       string
+	Idempotent            bool
+	AutoReach             bool
+	PhoneMarketing        bool
+	SMSMarketing          bool
+	ReplyAllowed          bool
+	ReplyRefusal          string
+	ReplyAuthority        string
+	SecondReplyBotStarted bool
+	Delivered             bool
+	Verification          string
 }
 
 // ChannelInteractionRow is one tenant-scoped interaction for the business UI.
@@ -135,7 +142,11 @@ func (s *Store) SetChannelFloor(tenantID, provider, accountID, subjectID, holder
 
 // IngestChannelEvent admits one event for the caller's tenant only.
 func (s *Store) IngestChannelEvent(tenantID string, in ChannelEventIn) (ChannelIngestResult, error) {
-	out := ChannelIngestResult{Verification: channelix.Capability().Verification}
+	out := ChannelIngestResult{
+		Verification:          channelix.Capability().Verification,
+		ReplyAuthority:        channelix.ReplyAuthorityReceptionGuard,
+		SecondReplyBotStarted: false,
+	}
 	if in.TargetTenantID != tenantID {
 		out.Refusal = channelix.RefusalForgedTenant
 		return out, nil
@@ -160,16 +171,40 @@ func (s *Store) IngestChannelEvent(tenantID string, in ChannelEventIn) (ChannelI
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return out, err
 	}
+
+	var fence *receptionguard.SessionFence
+	var fenceEpoch int
+	var fenceApproved bool
+	var missingSession bool
+	if strings.TrimSpace(in.ReceptionSessionID) != "" {
+		f, ep, approved, fErr := s.loadReceptionGuardFence(tenantID, in.ReceptionSessionID)
+		if errors.Is(fErr, sql.ErrNoRows) {
+			missingSession = true
+		} else if fErr != nil {
+			return out, fErr
+		} else {
+			fence, fenceEpoch, fenceApproved = f, ep, approved
+		}
+	}
+
 	decision := channelix.Admit(channelix.Input{
 		Grant: grant, Event: channelEventFrom(in), Prior: stored, Floor: floor,
-		WantReply: in.WantReply, HumanProcessed: in.HumanProcessed,
+		WantReply: in.WantReply, ReplySpeaker: in.ReplySpeaker,
+		ReceptionFence: fence, ReceptionEpoch: fenceEpoch, ReceptionApproved: fenceApproved,
+		HumanProcessed: in.HumanProcessed,
 	})
+	if missingSession && in.WantReply {
+		decision.ReplyAllowed = false
+		decision.ReplyRefusal = "reception_session_not_found"
+	}
 	out.AutoReach = false
 	out.Delivered = false
 	out.PhoneMarketing = decision.PhoneMarketing
 	out.SMSMarketing = decision.SMSMarketing
 	out.ReplyAllowed = decision.ReplyAllowed
 	out.ReplyRefusal = decision.ReplyRefusal
+	out.ReplyAuthority = decision.ReplyAuthority
+	out.SecondReplyBotStarted = false
 	out.Idempotent = decision.Idempotent
 	if !decision.OK {
 		out.Refusal = decision.Refusal
@@ -199,8 +234,8 @@ func (s *Store) IngestChannelEvent(tenantID string, in ChannelEventIn) (ChannelI
 		_, err = tx.Exec(`UPDATE channel_interactions SET body=?, text_sha256=?, explicit_intent=?, purpose=?, score=?, updated_at=?
 			WHERE id=? AND tenant_id=?`,
 			in.Text, decision.TextSHA256, boolInt(in.ExplicitIntent), in.Purpose, in.Score, now(), ixID, tenantID)
-	} else if decision.Retract {
-		_, err = tx.Exec(`UPDATE channel_interactions SET retracted=1, updated_at=? WHERE id=? AND tenant_id=?`, now(), ixID, tenantID)
+	} else if decision.Retract && !decision.Idempotent {
+		_, err = tx.Exec(`UPDATE channel_interactions SET retracted=1, phone_marketing=0, sms_marketing=0, updated_at=? WHERE id=? AND tenant_id=?`, now(), ixID, tenantID)
 	}
 	if err != nil {
 		return out, err
@@ -376,12 +411,59 @@ func (s *Store) loadChannelGrant(tenantID, provider, accountID string) (channeli
 
 func (s *Store) loadChannelPrior(tenantID, provider, accountID, eventID string) (channelix.Stored, error) {
 	var prior channelix.Stored
-	var retracted int
-	err := s.DB.QueryRow(`SELECT id, COALESCE(candidate_id,''), text_sha256, retracted
+	var retracted, phoneMkt, smsMkt int
+	err := s.DB.QueryRow(`SELECT id, COALESCE(candidate_id,''), text_sha256, retracted, phone_marketing, sms_marketing
 		FROM channel_interactions WHERE tenant_id=? AND provider=? AND account_id=? AND event_id=?`,
-		tenantID, provider, accountID, eventID).Scan(&prior.InteractionID, &prior.CandidateID, &prior.TextSHA256, &retracted)
+		tenantID, provider, accountID, eventID).Scan(&prior.InteractionID, &prior.CandidateID, &prior.TextSHA256, &retracted, &phoneMkt, &smsMkt)
 	prior.Retracted = retracted == 1
+	prior.PhoneMarketing = phoneMkt == 1
+	prior.SMSMarketing = smsMkt == 1
 	return prior, err
+}
+
+func (s *Store) loadReceptionGuardFence(tenantID, sessionID string) (*receptionguard.SessionFence, int, bool, error) {
+	var mode, owner, status string
+	var epoch int
+	err := s.DB.QueryRow(`SELECT mode, COALESCE(owner_member_id,''), epoch, status
+		FROM reception_sessions WHERE id=? AND tenant_id=?`, sessionID, tenantID).
+		Scan(&mode, &owner, &epoch, &status)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	norm, ok := receptionguard.NormalizeMode(mode)
+	if !ok {
+		norm = receptionguard.ModeHumanTakeover
+	}
+	fence, err := receptionguard.NewSessionFence(tenantID, sessionID, receptionguard.ModeAI)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	ts := time.Now().UTC()
+	approved := true
+	switch norm {
+	case receptionguard.ModeAIAssist:
+		if _, err := fence.EnterAIAssist(tenantID, "system", 1, ts); err != nil {
+			return nil, 0, false, err
+		}
+		// ai_assist requires explicit human approval before outbound send.
+		approved = false
+	case receptionguard.ModeHumanTakeover:
+		actor := strings.TrimSpace(owner)
+		if actor == "" {
+			actor = "human_owner"
+		}
+		if _, err := fence.Takeover(tenantID, actor, 1, ts); err != nil {
+			return nil, 0, false, err
+		}
+		approved = false
+	}
+	if strings.EqualFold(strings.TrimSpace(status), "closed") {
+		if _, err := fence.Close(tenantID, "system", ts); err != nil {
+			return nil, 0, false, err
+		}
+	}
+	_ = epoch
+	return fence, fence.Snapshot().Epoch, approved, nil
 }
 
 func (s *Store) loadChannelFloor(tenantID, provider, accountID, subjectID string) (string, error) {
@@ -398,6 +480,7 @@ func channelEventFrom(in ChannelEventIn) channelix.Event {
 		EventID: in.EventID, Kind: in.Kind, SubjectID: in.SubjectID, Nickname: in.Nickname, Phone: in.Phone,
 		Text: in.Text, ExplicitIntent: in.ExplicitIntent, Purpose: in.Purpose, Retracted: in.Retracted, Score: in.Score,
 		PhoneMarketingConsent: in.PhoneMarketingConsent, SMSMarketingConsent: in.SMSMarketingConsent,
+		LegacyRoute: in.LegacyRoute,
 	}
 }
 
