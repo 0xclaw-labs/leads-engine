@@ -31,6 +31,7 @@ import (
 	"github.com/bianjiefilm/leads-engine/server/internal/reception"
 	"github.com/bianjiefilm/leads-engine/server/internal/redact"
 	"github.com/bianjiefilm/leads-engine/server/internal/store"
+	"github.com/bianjiefilm/leads-engine/server/internal/todaynext"
 )
 
 const internalTokenHeader = "X-Internal-Token"
@@ -64,6 +65,9 @@ type Server struct {
 
 	formLimitOnce sync.Once
 	formLimit     *formRateLimiter
+
+	todayGuardOnce sync.Once
+	todayGuard     *todaynext.FollowUpIdempotencyGuard
 
 	// ReceptionFacts is the authorized read-only price/inventory/order book.
 	// Nil means every lookup is missing. This server never bills a customer.
@@ -141,6 +145,13 @@ func (s *Server) Close() {
 	if s.closeDB != nil {
 		s.closeDB()
 	}
+}
+
+func (s *Server) followUpGuard() *todaynext.FollowUpIdempotencyGuard {
+	s.todayGuardOnce.Do(func() {
+		s.todayGuard = todaynext.NewFollowUpIdempotencyGuard()
+	})
+	return s.todayGuard
 }
 
 // ---- caller context ---------------------------------------------------------
