@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  LEADS_APP_HOST,
   exchangeWithIdentity,
   hostAllowed,
   opaqueExchangeCode,
@@ -13,8 +14,9 @@ export const dynamic = "force-dynamic";
 
 const MAX_BODY_BYTES = 16 * 1024;
 
-function failure(reason: string): NextResponse {
-  const res = NextResponse.redirect(new URL(`/login?sso=${encodeURIComponent(reason)}`, "https://leads.modelxing.com"), 303);
+function failure(reason: string, appHost = LEADS_APP_HOST): NextResponse {
+  const host = appHost || LEADS_APP_HOST;
+  const res = NextResponse.redirect(new URL(`/?sso_error=${encodeURIComponent(reason)}`, `https://${host}`), 303);
   res.headers.set("cache-control", "no-store");
   return res;
 }
@@ -46,26 +48,26 @@ async function readCode(req: NextRequest): Promise<{ code: string | null; return
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const cfg = readSsoBridgeConfig(process.env);
   if (!hostAllowed(req.headers.get("host"), req.headers.get("x-forwarded-host"), cfg.appHost)) {
-    return failure("audience_mismatch");
+    return failure("audience_mismatch", cfg.appHost);
   }
   if (!sameOriginPost({ origin: req.headers.get("origin"), secFetchSite: req.headers.get("sec-fetch-site") }, cfg.appHost)) {
-    return failure("audience_mismatch");
+    return failure("audience_mismatch", cfg.appHost);
   }
   const { code, returnTarget } = await readCode(req);
   const opaque = opaqueExchangeCode(code);
-  if (!opaque) return failure("invalid_request");
+  if (!opaque) return failure("invalid_request", cfg.appHost);
 
   let result;
   try {
     const clientIP = (req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "").split(",")[0]?.trim() || null;
     result = await exchangeWithIdentity(cfg, opaque, clientIP);
   } catch {
-    return failure("identity_unavailable");
+    return failure("identity_unavailable", cfg.appHost);
   }
-  if (result.status !== 200) return failure(result.status === 403 ? "membership_required" : "failed");
+  if (result.status !== 200) return failure(result.status === 403 ? "membership_required" : "failed", cfg.appHost);
   // identity 200 但没有本应用会话 cookie 不能算成功（Q2 缺口 1）。
   if (!result.setCookie.some((cookie) => cookie.trim().toLowerCase().startsWith("leads-engine_session="))) {
-    return failure("failed");
+    return failure("failed", cfg.appHost);
   }
 
   const res = NextResponse.redirect(new URL(safeReturnPath(returnTarget), `https://${cfg.appHost}`), 303);
