@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/bianjiefilm/leads-engine/server/internal/tenantmap"
@@ -144,6 +145,17 @@ const (
 // 有意不复用 ECO_HANDOFF_PROOF_SALT:不同用途绝不共享同一盐。
 const EnvDedupPepper = "LEADS_DEDUP_PEPPER"
 
+// Hybrid Fast-Path + JEV (/v1/systemone) intent routing keys (default off).
+const (
+	EnvLeadsJEVEnabled          = "LEADS_JEV_ENABLED"
+	EnvLeadsJEVShadowMode       = "LEADS_JEV_SHADOW_MODE"
+	EnvModelxingAPIKey          = "MODELXING_API_KEY"
+	EnvLeadsJEVBaseURL          = "LEADS_JEV_BASE_URL"
+	EnvLeadsJEVModel            = "LEADS_JEV_MODEL"
+	EnvLeadsJEVTimeoutMs        = "LEADS_JEV_TIMEOUT_MS"
+	EnvLeadsJEVHandoffThreshold = "LEADS_JEV_HANDOFF_THRESHOLD"
+)
+
 // Config is the resolved server configuration.
 type Config struct {
 	// HTTPAddr is the loopback listen address, e.g. 127.0.0.1:18230.
@@ -259,6 +271,16 @@ type Config struct {
 	// value is duplicate or invalid. Callers must refuse rather than guess.
 	TenantBindings        []tenantmap.Binding
 	TenantBindingProblems []string
+
+	// Hybrid Fast-Path + JEV (/v1/systemone) intent classifier & handoff router.
+	// Default off; requires both LeadsJEVEnabled=true and ModelxingAPIKey != "" to wire.
+	LeadsJEVEnabled          bool
+	LeadsJEVShadowMode       bool
+	ModelxingAPIKey          string
+	LeadsJEVBaseURL          string
+	LeadsJEVModel            string
+	LeadsJEVTimeoutMs        int
+	LeadsJEVHandoffThreshold float64
 }
 
 // IngestSource is one registered Notify sender (HUI-1680). The fetch base is
@@ -372,7 +394,14 @@ func fromEnv(get func(string) string) Config {
 			TenantScope: get(EnvEcoHandoffTenantScope),
 			ProofSalt:   get(EnvEcoHandoffProofSalt),
 		},
-		DedupPepper: get(EnvDedupPepper),
+		DedupPepper:              get(EnvDedupPepper),
+		LeadsJEVEnabled:          isTruthy(get(EnvLeadsJEVEnabled)),
+		LeadsJEVShadowMode:       isTruthy(get(EnvLeadsJEVShadowMode)),
+		ModelxingAPIKey:          strings.TrimSpace(get(EnvModelxingAPIKey)),
+		LeadsJEVBaseURL:          firstNonEmpty(strings.TrimSpace(get(EnvLeadsJEVBaseURL)), "https://modelxing.com/v1/systemone"),
+		LeadsJEVModel:            firstNonEmpty(strings.TrimSpace(get(EnvLeadsJEVModel)), "jev-1.14.0"),
+		LeadsJEVTimeoutMs:        parsePositiveInt(get(EnvLeadsJEVTimeoutMs), 1500),
+		LeadsJEVHandoffThreshold: parseUnitFloat(get(EnvLeadsJEVHandoffThreshold), 0.65),
 	}
 }
 
@@ -465,6 +494,20 @@ func isTruthy(v string) bool {
 		return true
 	}
 	return false
+}
+
+func parsePositiveInt(raw string, def int) int {
+	if n, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && n > 0 {
+		return n
+	}
+	return def
+}
+
+func parseUnitFloat(raw string, def float64) float64 {
+	if f, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && f > 0 && f < 1 {
+		return f
+	}
+	return def
 }
 
 // parseIngestSources reads the deployment allowlist. It does not validate;
