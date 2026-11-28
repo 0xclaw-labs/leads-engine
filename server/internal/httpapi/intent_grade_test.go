@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"reflect"
@@ -647,5 +648,145 @@ func TestIntentSampleReportIsFixtureNotARealModel(t *testing.T) {
 		if !reflect.DeepEqual(stringList(outcome["missing_fields"]), row.Missing) {
 			t.Fatalf("%s missing = %v", row.Kind, outcome["missing_fields"])
 		}
+	}
+}
+
+func TestOpenWiresJEVIntentModelOnlyWhenEnabledWithAPIKey(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "leads-jev.db")
+	// Enabled without API key -> stays nil (safe default).
+	cfgNoKey := config.Load(func(k string) string {
+		switch k {
+		case "LEADS_DB_PATH":
+			return dbPath
+		case "LEADS_JEV_ENABLED":
+			return "true"
+		default:
+			return ""
+		}
+	})
+	s1, err := Open(cfgNoKey, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatalf("Open no key: %v", err)
+	}
+	t.Cleanup(s1.Close)
+	if s1.IntentModel != nil {
+		t.Fatal("LEADS_JEV_ENABLED=true without MODELXING_API_KEY must leave IntentModel nil")
+	}
+
+	// Enabled with API key -> wires jevIntentAdapter.
+	cfgOn := config.Load(func(k string) string {
+		switch k {
+		case "LEADS_DB_PATH":
+			return dbPath
+		case "LEADS_JEV_ENABLED":
+			return "true"
+		case "MODELXING_API_KEY":
+			return "sk-test-key"
+		default:
+			return ""
+		}
+	})
+	s2, err := Open(cfgOn, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatalf("Open enabled: %v", err)
+	}
+	t.Cleanup(s2.Close)
+	if s2.IntentModel == nil {
+		t.Fatal("LEADS_JEV_ENABLED=true + MODELXING_API_KEY must wire IntentModel")
+	}
+}
+
+func TestIntentGradeHTTPWithHybridJEVAndShadowAndFailSafe(t *testing.T) {
+	var upstreamStatus atomic.Int32
+	upstreamStatus.Store(http.StatusOK)
+	var upstreamCalls atomic.Int32
+
+	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		if upstreamStatus.Load() != http.StatusOK {
+			w.WriteHeader(int(upstreamStatus.Load()))
+			_, _ = w.Write([]byte(`{"error":"down"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id": "sys1_http_1",
+			"model": "jev-1.14.0",
+			"answers": {
+				"intent_grade": {"type": "choice", "choice": "high", "confidence": 0.84, "probabilities": {"high":0.85,"medium":0.12,"low":0.03}},
+				"needs_human_handoff": {"type": "noul", "noul": 0.93}
+			}
+		}`))
+	}))
+	defer jevSrv.Close()
+
+	h := newHarnessOpts(t, harnessOpts{featureIntentGrade: true})
+	tenantA, _, contactA1 := h.seed()
+	leadID := h.createLead(tenantA, contactA1)
+
+	// 1) Active JEV mode: gray-zone text gets JEV high grade + needs_human_handoff=true,
+	// while outreach permissions stay strictly false!
+	h.api.IntentModel = newJEVIntentAdapter(config.Config{
+		LeadsJEVEnabled:          true,
+		ModelxingAPIKey:          "sk-test",
+		LeadsJEVBaseURL:          jevSrv.URL,
+		LeadsJEVModel:            "jev-1.14.0",
+		LeadsJEVTimeoutMs:        1500,
+		LeadsJEVHandoffThreshold: 0.65,
+	}, log.New(io.Discard, "", 0))
+
+	gray := "我们分店扩建项目下个月启动，老板比较看重你们的稳定性和交付周期，想听听定制方案。"
+	got := h.mustDo("POST", "/api/v1/intent-grades", sessionSalesA1, tenantA, intentBody(tenantA, leadID, gray, false), http.StatusCreated)
+	snap := got["snapshot"].(map[string]any)
+	if snap["grade"] != "high" {
+		t.Fatalf("expected JEV hybrid grade=high, got %v", snap["grade"])
+	}
+	requireNoOutreach(t, got["permissions"])
+	routing := got["routing"].(map[string]any)
+	if routing["source"] != "jev" || routing["needs_human_handoff"] != true {
+		t.Fatalf("unexpected routing block: %v", routing)
+	}
+	if upstreamCalls.Load() != 1 {
+		t.Fatalf("expected 1 JEV upstream call, got %d", upstreamCalls.Load())
+	}
+
+	// 2) Shadow Mode: observes JEV but preserves rule fallback (insufficient).
+	h.api.IntentModel = newJEVIntentAdapter(config.Config{
+		LeadsJEVEnabled:          true,
+		LeadsJEVShadowMode:       true,
+		ModelxingAPIKey:          "sk-test",
+		LeadsJEVBaseURL:          jevSrv.URL,
+		LeadsJEVModel:            "jev-1.14.0",
+		LeadsJEVTimeoutMs:        1500,
+		LeadsJEVHandoffThreshold: 0.65,
+	}, log.New(io.Discard, "", 0))
+	grayShadow := "我们下季度可能会评估你们家的工具，先随便了解一下团队支持情况。"
+	gotShadow := h.mustDo("POST", "/api/v1/intent-grades", sessionSalesA1, tenantA, intentBody(tenantA, leadID, grayShadow, false), http.StatusCreated)
+	if gotShadow["snapshot"].(map[string]any)["grade"] != "insufficient" {
+		t.Fatalf("shadow mode must preserve rule grade=insufficient, got %v", gotShadow["snapshot"])
+	}
+	shadowRouting := gotShadow["routing"].(map[string]any)
+	if shadowRouting["shadow_mode"] != true || shadowRouting["shadow_grade"] != "high" || shadowRouting["shadow_needs_human"] != true {
+		t.Fatalf("shadow routing telemetry mismatch: %v", shadowRouting)
+	}
+
+	// 3) Upstream 502 outage -> 100% Fail-Safe back to deterministic rules!
+	upstreamStatus.Store(http.StatusBadGateway)
+	h.api.IntentModel = newJEVIntentAdapter(config.Config{
+		LeadsJEVEnabled:          true,
+		ModelxingAPIKey:          "sk-test",
+		LeadsJEVBaseURL:          jevSrv.URL,
+		LeadsJEVModel:            "jev-1.14.0",
+		LeadsJEVTimeoutMs:        1500,
+		LeadsJEVHandoffThreshold: 0.65,
+	}, log.New(io.Discard, "", 0))
+	grayDown := "我们团队想了解下你们和竞品的区别，目前还在初步调研。"
+	gotDown := h.mustDo("POST", "/api/v1/intent-grades", sessionSalesA1, tenantA, intentBody(tenantA, leadID, grayDown, false), http.StatusCreated)
+	if gotDown["snapshot"].(map[string]any)["grade"] != "medium" {
+		t.Fatalf("outage must fail-safe to rule grade=medium ('想了解'), got %v", gotDown["snapshot"])
+	}
+	downRouting := gotDown["routing"].(map[string]any)
+	if downRouting["source"] != "fallback_rules" {
+		t.Fatalf("expected fallback_rules on 502, got %v", downRouting)
 	}
 }

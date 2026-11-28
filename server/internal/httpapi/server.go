@@ -27,6 +27,7 @@ import (
 	"github.com/bianjiefilm/leads-engine/server/internal/db"
 	"github.com/bianjiefilm/leads-engine/server/internal/handoffsender"
 	"github.com/bianjiefilm/leads-engine/server/internal/identity"
+	"github.com/bianjiefilm/leads-engine/server/internal/jevintent"
 	"github.com/bianjiefilm/leads-engine/server/internal/lightcopy"
 	"github.com/bianjiefilm/leads-engine/server/internal/matrixdraftclient"
 	"github.com/bianjiefilm/leads-engine/server/internal/platformtask"
@@ -152,8 +153,43 @@ func Open(cfg config.Config, logger *log.Logger) (*Server, error) {
 		s.ReceptionPhraser = phraser
 		s.LightCopyPhraser = phraser
 	}
-	// IntentModel stays nil even when the three task keys are set.
+	// IntentModel stays nil unless LEADS_JEV_ENABLED=true and MODELXING_API_KEY
+	// are explicitly configured; platform task keys alone never wire IntentModel.
+	if cfg.LeadsJEVEnabled && strings.TrimSpace(cfg.ModelxingAPIKey) != "" {
+		s.IntentModel = newJEVIntentAdapter(cfg, logger)
+	}
 	return s, nil
+}
+
+// jevIntentAdapter bridges jevintent.Classifier into Server.IntentModel while
+// also implementing intentEvaluator for Hybrid Fast-Path + JEV scoring/routing.
+type jevIntentAdapter struct {
+	classifier *jevintent.Classifier
+}
+
+func newJEVIntentAdapter(cfg config.Config, logger *log.Logger) *jevIntentAdapter {
+	return &jevIntentAdapter{
+		classifier: jevintent.NewClassifier(jevintent.Config{
+			Endpoint:         cfg.LeadsJEVBaseURL,
+			APIKey:           cfg.ModelxingAPIKey,
+			Model:            cfg.LeadsJEVModel,
+			Timeout:          time.Duration(cfg.LeadsJEVTimeoutMs) * time.Millisecond,
+			HandoffThreshold: cfg.LeadsJEVHandoffThreshold,
+			ShadowMode:       cfg.LeadsJEVShadowMode,
+			Logger:           logger,
+		}),
+	}
+}
+
+func (a *jevIntentAdapter) Attempt(_ context.Context, _ string) IntentModelReceipt {
+	return IntentModelReceipt{
+		AttemptState:   "unknown",
+		BillingVerdict: "not_completed",
+	}
+}
+
+func (a *jevIntentAdapter) EvaluateIntent(ctx context.Context, req jevintent.EvalRequest) jevintent.EvalResult {
+	return a.classifier.Evaluate(ctx, req)
 }
 
 // Close releases the database handle.

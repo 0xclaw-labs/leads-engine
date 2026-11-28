@@ -13,6 +13,7 @@ import (
 
 	"github.com/bianjiefilm/leads-engine/server/internal/authz"
 	"github.com/bianjiefilm/leads-engine/server/internal/intentgrade"
+	"github.com/bianjiefilm/leads-engine/server/internal/jevintent"
 	"github.com/bianjiefilm/leads-engine/server/internal/store"
 )
 
@@ -226,6 +227,11 @@ func (s *Server) handleIntentGradeCorrect(w http.ResponseWriter, r *http.Request
 	s.finishIntentScore(w, r.Context(), c, input, evidence)
 }
 
+// intentEvaluator is implemented by jevIntentAdapter when LEADS_JEV_ENABLED=true.
+type intentEvaluator interface {
+	EvaluateIntent(ctx context.Context, req jevintent.EvalRequest) jevintent.EvalResult
+}
+
 func (s *Server) finishIntentScore(w http.ResponseWriter, ctx context.Context, c *caller, input intentgrade.Input, evidence []intentgrade.Evidence) {
 	attempt, err := s.noteIntentModelAttempt(ctx, input.TenantID, input.SubjectKind, input.SubjectID)
 	if err != nil {
@@ -237,7 +243,36 @@ func (s *Server) finishIntentScore(w http.ResponseWriter, ctx context.Context, c
 		fail(w, http.StatusUnprocessableEntity, res.Refusal, res.Reason)
 		return
 	}
-	origin := intentgrade.GradeOrigin(res.HumanLocked, intentOriginTexts(evidence))
+	originTexts := intentOriginTexts(evidence)
+	origin := intentgrade.GradeOrigin(res.HumanLocked, originTexts)
+
+	var routing *jevintent.EvalResult
+	if ev, ok := s.IntentModel.(intentEvaluator); ok && !res.HumanLocked && origin != intentgrade.OriginFixture {
+		eval := ev.EvaluateIntent(ctx, jevintent.EvalRequest{
+			SubjectKind:    input.SubjectKind,
+			Text:           strings.Join(originTexts, "\n"),
+			EvidenceCount:  len(originTexts),
+			FallbackGrade:  res.Grade,
+			FallbackReason: res.Reason,
+		})
+		routing = &eval
+		if !eval.ShadowMode && (eval.Source == jevintent.SourceJEV || eval.Source == jevintent.SourceFastPath) {
+			if eval.Grade == intentgrade.GradeHigh || eval.Grade == intentgrade.GradeMedium || eval.Grade == intentgrade.GradeLow {
+				res.Grade = eval.Grade
+				if eval.Reason != "" {
+					res.Reason = eval.Reason
+				}
+				if eval.Model != "" && eval.Source == jevintent.SourceJEV {
+					res.ModelVersion = eval.Model
+				}
+				if eval.NeedsHumanHandoff && res.Suggestion.Kind != "do_not_contact" {
+					res.Suggestion.Kind = "suggest_follow_up"
+					res.Suggestion.Label = "建议人工及时介入跟进。是否可联系由授权和渠道规则决定，不自动外呼、短信、拉群或建单。"
+				}
+			}
+		}
+	}
+
 	if input.Prior != nil && input.Prior.Fingerprint == res.Fingerprint && !res.PriorStale {
 		rows, units, live, err := s.St.CountIntentUsage(input.TenantID, input.SubjectKind, input.SubjectID)
 		if err != nil {
@@ -249,7 +284,7 @@ func (s *Server) finishIntentScore(w http.ResponseWriter, ctx context.Context, c
 			fail(w, http.StatusInternalServerError, "internal", "intent grade lookup failed")
 			return
 		}
-		writeIntentScore(w, http.StatusOK, current, false, "", rows, units, live, origin, intentAttemptJSON(attempt))
+		writeIntentScore(w, http.StatusOK, current, false, "", rows, units, live, origin, intentAttemptJSON(attempt), routing)
 		return
 	}
 	rawEvidence, err := json.Marshal(evidenceView(evidence))
@@ -301,12 +336,12 @@ func (s *Server) finishIntentScore(w http.ResponseWriter, ctx context.Context, c
 		fail(w, http.StatusInternalServerError, "internal", "intent usage lookup failed")
 		return
 	}
-	writeIntentScore(w, http.StatusCreated, saved, res.PriorStale, res.PriorStaleReason, rows, units, live, origin, intentAttemptJSON(attempt))
+	writeIntentScore(w, http.StatusCreated, saved, res.PriorStale, res.PriorStaleReason, rows, units, live, origin, intentAttemptJSON(attempt), routing)
 }
 
-func writeIntentScore(w http.ResponseWriter, status int, snap store.IntentSnapshot, priorStale bool, priorReason string, rows, units, live int, origin string, model map[string]any) {
+func writeIntentScore(w http.ResponseWriter, status int, snap store.IntentSnapshot, priorStale bool, priorReason string, rows, units, live int, origin string, model map[string]any, routing *jevintent.EvalResult) {
 	call, directMessage, createOrder := intentgrade.OutreachPermissions(snap.Grade)
-	writeJSON(w, status, map[string]any{
+	body := map[string]any{
 		"snapshot":           snap,
 		"prior_stale":        priorStale,
 		"prior_stale_reason": priorReason,
@@ -314,7 +349,11 @@ func writeIntentScore(w http.ResponseWriter, status int, snap store.IntentSnapsh
 		"grade_origin":       origin,
 		"model":              model,
 		"permissions":        map[string]any{"call": call, "direct_message": directMessage, "create_order": createOrder},
-	})
+	}
+	if routing != nil {
+		body["routing"] = routing
+	}
+	writeJSON(w, status, body)
 }
 
 func (s *Server) noteIntentModelAttempt(ctx context.Context, tenant, kind, id string) (store.IntentModelAttempt, error) {
